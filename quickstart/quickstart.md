@@ -16,8 +16,6 @@ You will define `AuthPolicy` resources to specify which tools the agent is permi
 Before you begin, ensure you have the following tools installed and configured:
 
 - **A Kubernetes cluster**: You can use a local cluster like `kind` or `minikube`, or a cloud-based one.
-  > **Note**
-  > If your cluster doesn't have a native `LoadBalancer` implementation (common in local setups), we recommend installing one like [MetalLB](https://metallb.universe.tf/installation/) to expose the agent's web UI.
 - **`kubectl`**: The Kubernetes command-line tool. See the [official installation guide](https://kubernetes.io/docs/tasks/tools/#kubectl).
 - **A configured `kubectl` context**: Your `kubectl` should be pointing to the cluster you intend to use.
   ```shell
@@ -131,23 +129,22 @@ You can now interact with your agent through its web UI.
 
 ### Step 6.1: Access the Agent UI
 
-Choose one of the following methods to access the UI:
+We'll use port forwarding to access the agent's web UI for simplicity.
 
-- **Option A: Load Balancer (Cloud Clusters)**
-  If your cluster has a load balancer, get the agent's external IP address:
+```shell
+kubectl port-forward service/adk-agent-svc 8081:80 &
+```
 
-  ```shell
-  kubectl get svc adk-agent-svc -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-  ```
+Then, navigate to `http://localhost:8081` in your browser.
 
-  Open this IP address in your web browser.
-
-- **Option B: Port Forwarding (Local Clusters)**
-  If you're running a local cluster, use `kubectl port-forward`:
-  ```shell
-  kubectl port-forward service/adk-agent-svc 8081:80 &
-  ```
-  Then, navigate to `http://localhost:8081` in your browser.
+> **Note**
+> If your cluster has a `LoadBalancer` implementation (e.g., in a cloud environment or a local setup like [MetalLB](https://metallb.io/installation/)), you can also access the agent via its external IP address. Get the agent's external IP address:
+>
+> ```shell
+> kubectl get svc adk-agent-svc -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+> ```
+>
+> Open this IP address in your web browser.
 
 ### Step 6.2: Chat with the Agent
 
