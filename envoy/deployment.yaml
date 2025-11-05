@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: envoy-sa
+  namespace: agentic-net
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy-deployment
+  namespace: agentic-net
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: envoy
+  template:
+    metadata:
+      labels:
+        app: envoy
+    spec:
+      containers:
+        - name: envoy
+          image: envoyproxy/envoy:contrib-v1.36-latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "Waiting for JWKS file to be created..."
+              while [ ! -f /etc/envoy/jwks/jwks.json ]; do
+                sleep 1
+              done
+              echo "JWKS file found. Starting Envoy."
+              exec /usr/local/bin/envoy -c /etc/envoy/envoy.yaml -l trace --log-path /dev/stderr
+          ports:
+            - name: http
+              containerPort: 10001
+          volumeMounts:
+            - name: envoy-config-volume
+              mountPath: /etc/envoy/envoy.yaml
+              subPath: envoy.yaml # The key in the ConfigMap above
+            - name: jwks-volume
+              mountPath: /etc/envoy/jwks # Mount the shared volume where Envoy can read the keys
+        # 2. Add the new sidecar container
+        - name: jwks-fetcher-sidecar
+          image: google/cloud-sdk:slim # A small image with gcloud and curl
+          # This command runs in a loop to fetch the keys every hour
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              apt-get update && apt-get install -y jq
+              echo "Starting JWKS fetcher..."
+              touch /var/run/jwks/jwks.json
+
+              SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              CACERT_PATH="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+              while true; do
+                echo "Fetching JWKS keys..."
+                JWKS_URI=$(curl --silent --cacert "$CACERT_PATH" \
+                    -H "Authorization: Bearer $SA_TOKEN" \
+                    https://kubernetes.default.svc/.well-known/openid-configuration | jq -r '.jwks_uri')
+
+                # Check if the JWKS_URI was found
+                if [ -z "$JWKS_URI" ]; then
+                    echo "Could not retrieve JWKS URI. Exiting."
+                    exit 1
+                fi
+
+                echo "Discovered JWKS URI: $JWKS_URI"
+
+                # 2. Access the JWKS URI, providing the SAME certificate and token
+                #    This is the corrected command.
+                curl --cacert "$CACERT_PATH" \
+                    -H "Authorization: Bearer $SA_TOKEN" \
+                    "$JWKS_URI" -o /var/run/jwks/jwks.json.tmp
+
+                # Atomically move the file to prevent Envoy from reading a partial write
+                mv /var/run/jwks/jwks.json.tmp /var/run/jwks/jwks.json
+                cat /var/run/jwks/jwks.json
+                echo -e "\nJWKS keys updated successfully."
+                sleep 3600 # Sleep for 1 hour
+              done
+          volumeMounts:
+            - name: jwks-volume
+              mountPath: /var/run/jwks # Mount the shared volume where the sidecar writes the keys
+      volumes:
+        - name: envoy-config-volume
+          configMap:
+            name: envoy-config
+        - name: jwks-volume
+          emptyDir: {} # A temporary volume shared by containers in this pod
+      serviceAccountName: envoy-sa
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-service
+  namespace: agentic-net
+spec:
+  type: ClusterIP
+  selector:
+    app: envoy
+  ports:
+    - protocol: TCP
+      port: 10001 # Port for the service itself
+      targetPort: 10001 # Port on the Envoy pod
