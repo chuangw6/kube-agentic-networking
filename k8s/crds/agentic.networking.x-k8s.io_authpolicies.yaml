@@ -1,0 +1,221 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: authpolicies.agentic.networking.x-k8s.io
+spec:
+  group: agentic.networking.x-k8s.io
+  names:
+    kind: AuthPolicy
+    listKind: AuthPolicyList
+    plural: authpolicies
+    singular: authpolicy
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AuthPolicy is the Schema for the authpolicies API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of AuthPolicy.
+            properties:
+              action:
+                description: Action specifies the action to take when a request matches
+                  the rules.
+                enum:
+                - ALLOW
+                type: string
+              rules:
+                description: Rules defines a list of rules to be applied to the target.
+                items:
+                  description: |-
+                    AuthRule specifies an authorization rule for the targeted backend.
+                    When the action is ALLOW,
+                      - requests from Source are permitted to access the listed Tools.
+                      - If the tool list is empty, the rule denies access to all tools from Source.
+                  properties:
+                    source:
+                      description: Source specifies the source of the request.
+                      properties:
+                        identities:
+                          description: |-
+                            Identities specifies a list of identities that are matched by this rule.
+                            A request's identity must be present in this list to match the rule.
+
+                            Identities must be specified as SPIFFE-formatted URIs following the pattern:
+                              spiffe://<trust_domain>/<workload-identifier>
+
+                            While the exact workload identifier structure is implementation-specific,
+                            implementations are encouraged to follow the convention of
+                            `spiffe://<trust_domain>/ns/<namespace>/sa/<serviceaccount>`
+                            when representing Kubernetes workload identities.
+                          items:
+                            type: string
+                          type: array
+                        serviceAccounts:
+                          description: |-
+                            ServiceAccounts specifies a list of Kubernetes Service Accounts that are
+                            matched by this rule. A request originating from a pod associated with
+                            one of these Serviceaccounts will match the rule.
+
+                            Values must be in one of the following formats:
+                              - "<namespace>/<serviceaccount-name>": A specific Serviceaccount in a namespace.
+                              - "<namespace>/*": All Serviceaccounts in the given namespace.
+                              - "<serviceaccount-name>": a Serviceaccount in the same namespace as the policy.
+
+                            Use of "*" alone (i.e., all Serviceaccounts in all namespaces) is not allowed.
+                            To select all Serviceaccounts in the current namespace, use "<namespace>/*" explicitly.
+
+                            Example:
+                              - "default/bookstore" → Matches Serviceaccount "bookstore" in namespace "default"
+                              - "payments/*" → Matches any Serviceaccount in namespace "payments"
+                              - "frontend" → Matches "frontend" Serviceaccount in the same namespace as the policy
+
+                            The ServiceAccounts listed here are expected to exist within the same
+                            trust domain as the targeted workload, which in many environments means
+                            the same Kubernetes cluster. Cross-cluster or cross-trust-domain access
+                            should instead be expressed using the `Identities` field.
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    tools:
+                      description: Tools specifies a list of tools.
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - source
+                  type: object
+                type: array
+              targetRef:
+                description: |-
+                  TargetRef specifies the target of the AuthPolicy.
+                  Currently, only Backend can be used as a target.
+                properties:
+                  group:
+                    description: Group is the group of the target resource.
+                    maxLength: 253
+                    pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  kind:
+                    description: Kind is kind of the target resource.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                    type: string
+                  name:
+                    description: Name is the name of the target resource.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - group
+                - kind
+                - name
+                type: object
+            required:
+            - action
+            - rules
+            - targetRef
+            type: object
+          status:
+            description: status defines the observed state of AuthPolicy.
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the AuthPolicy resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
