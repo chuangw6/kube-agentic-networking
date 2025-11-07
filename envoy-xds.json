@@ -10,6 +10,30 @@
   "static_resources": {
     "clusters": [
       {
+        "name": "default-local-mcp-backend",
+        "type": "STRICT_DNS",
+        "connect_timeout": "5s",
+        "load_assignment": {
+          "cluster_name": "default-local-mcp-backend",
+          "endpoints": [
+            {
+              "lb_endpoints": [
+                {
+                  "endpoint": {
+                    "address": {
+                      "socket_address": {
+                        "address": "mcp-everything-svc.default.svc.cluster.local",
+                        "port_value": 3001
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
         "name": "default-remote-mcp-backend",
         "type": "LOGICAL_DNS",
         "connect_timeout": "5s",
@@ -38,30 +62,6 @@
             "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
             "sni": "mcp.deepwiki.com"
           }
-        }
-      },
-      {
-        "name": "default-local-mcp-backend",
-        "type": "STRICT_DNS",
-        "connect_timeout": "5s",
-        "load_assignment": {
-          "cluster_name": "default-local-mcp-backend",
-          "endpoints": [
-            {
-              "lb_endpoints": [
-                {
-                  "endpoint": {
-                    "address": {
-                      "socket_address": {
-                        "address": "mcp-everything-svc.default.svc.cluster.local",
-                        "port_value": 3001
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          ]
         }
       }
     ],

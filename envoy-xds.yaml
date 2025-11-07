@@ -7,6 +7,18 @@ static_resources:
   clusters:
   - connect_timeout: 5s
     load_assignment:
+      cluster_name: default-local-mcp-backend
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: mcp-everything-svc.default.svc.cluster.local
+                port_value: 3001
+    name: default-local-mcp-backend
+    type: STRICT_DNS
+  - connect_timeout: 5s
+    load_assignment:
       cluster_name: default-remote-mcp-backend
       endpoints:
       - lb_endpoints:
@@ -22,18 +34,6 @@ static_resources:
         '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
         sni: mcp.deepwiki.com
     type: LOGICAL_DNS
-  - connect_timeout: 5s
-    load_assignment:
-      cluster_name: default-local-mcp-backend
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: mcp-everything-svc.default.svc.cluster.local
-                port_value: 3001
-    name: default-local-mcp-backend
-    type: STRICT_DNS
   listeners:
   - address:
       socket_address:
