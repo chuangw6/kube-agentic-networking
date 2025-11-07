@@ -1,5 +1,7 @@
 # Agentic Networking Quickstart
 
+> ⚠️ **Disclaimer**: This quickstart demonstrates a proof-of-concept. The current implementation is not production-ready. For example, the API is `v1alpha1` and subject to breaking changes in upcoming months. Additionally, the controller does not automatically reconcile on CRD changes.
+
 Welcome! This guide provides a hands-on walkthrough for getting started with the Kube Agentic Networking project. In just a few steps, you'll learn how to deploy an AI agent to your Kubernetes cluster and use declarative, high-level policies to control its access to various tools.
 
 ## Overview
@@ -98,7 +100,7 @@ The final piece is the AI agent itself. We'll use a sample agent built with the 
 
 ### Step 5.1: Configure LLM Authentication
 
-The agent requires an API key to communicate with a Large Language Model (LLM). This guide uses the Google Gemini family of models.
+The agent's ability to understand requests and generate responses is powered by a Large Language Model (LLM). This guide uses a HuggingFace model ([deepseek-ai/DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528)) for vendor neutrality.
 
 > **Note**
 > The agent is configurable and supports various LLM providers like Google, OpenAI and Anthropic. You can modify the [agent deployment manifest](/quickstart/adk-agent/deployment.yaml) to use a different provider by configuring the API key as an environment variable. This [ADK documentation site](https://google.github.io/adk-docs/agents/models/) covers the setup details.
