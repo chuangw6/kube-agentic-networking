@@ -21,7 +21,7 @@ spec:
       containers:
         - name: adk-agent
           imagePullPolicy: Always
-          image: chuangw/adk-agent:latest
+          image: chuangw/adk-agent:hf
           resources:
             limits:
               memory: "512Mi"
@@ -38,11 +38,14 @@ spec:
               value: "8080"
             - name: ENVOY_SERVICE
               value: "envoy-service.agentic-net.svc.cluster.local:10001"
-            - name: GOOGLE_API_KEY
+            - name: HF_MODEL
+              value: "huggingface/deepseek-ai/DeepSeek-R1-0528"
+            - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: google-secret
-                  key: google-api-key
+                  name: hf-secret
+                  key: hf-token-key
+
 ---
 apiVersion: v1
 kind: Service

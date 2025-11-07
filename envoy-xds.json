@@ -10,30 +10,6 @@
   "static_resources": {
     "clusters": [
       {
-        "name": "default-local-mcp-backend",
-        "type": "STRICT_DNS",
-        "connect_timeout": "5s",
-        "load_assignment": {
-          "cluster_name": "default-local-mcp-backend",
-          "endpoints": [
-            {
-              "lb_endpoints": [
-                {
-                  "endpoint": {
-                    "address": {
-                      "socket_address": {
-                        "address": "mcp-everything-svc.default.svc.cluster.local",
-                        "port_value": 3001
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          ]
-        }
-      },
-      {
         "name": "default-remote-mcp-backend",
         "type": "LOGICAL_DNS",
         "connect_timeout": "5s",
@@ -62,6 +38,30 @@
             "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
             "sni": "mcp.deepwiki.com"
           }
+        }
+      },
+      {
+        "name": "default-local-mcp-backend",
+        "type": "STRICT_DNS",
+        "connect_timeout": "5s",
+        "load_assignment": {
+          "cluster_name": "default-local-mcp-backend",
+          "endpoints": [
+            {
+              "lb_endpoints": [
+                {
+                  "endpoint": {
+                    "address": {
+                      "socket_address": {
+                        "address": "mcp-everything-svc.default.svc.cluster.local",
+                        "port_value": 3001
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
         }
       }
     ],
@@ -247,15 +247,7 @@
                                                           "header": {
                                                             "name": "x-user-role",
                                                             "string_match": {
-                                                              "exact": "system:serviceaccount:default:adk-agent-1-sa"
-                                                            }
-                                                          }
-                                                        },
-                                                        {
-                                                          "header": {
-                                                            "name": "x-user-role",
-                                                            "string_match": {
-                                                              "exact": "system:serviceaccount:default:adk-agent-2-sa"
+                                                              "exact": "system:serviceaccount:default:adk-agent-sa"
                                                             }
                                                           }
                                                         }
@@ -443,70 +435,7 @@
                                                           "header": {
                                                             "name": "x-user-role",
                                                             "string_match": {
-                                                              "exact": "system:serviceaccount:default:adk-agent-1-sa"
-                                                            }
-                                                          }
-                                                        }
-                                                      ]
-                                                    }
-                                                  }
-                                                ]
-                                              },
-                                              "default-local-mcp-backend-rule-1": {
-                                                "permissions": [
-                                                  {
-                                                    "and_rules": {
-                                                      "rules": [
-                                                        {
-                                                          "sourced_metadata": {
-                                                            "metadata_matcher": {
-                                                              "filter": "mcp_proxy",
-                                                              "path": [
-                                                                {
-                                                                  "key": "method"
-                                                                }
-                                                              ],
-                                                              "value": {
-                                                                "string_match": {
-                                                                  "exact": "tools/call"
-                                                                }
-                                                              }
-                                                            }
-                                                          }
-                                                        },
-                                                        {
-                                                          "sourced_metadata": {
-                                                            "metadata_matcher": {
-                                                              "filter": "mcp_proxy",
-                                                              "path": [
-                                                                {
-                                                                  "key": "params"
-                                                                },
-                                                                {
-                                                                  "key": "name"
-                                                                }
-                                                              ],
-                                                              "value": {
-                                                                "string_match": {
-                                                                  "exact": "add"
-                                                                }
-                                                              }
-                                                            }
-                                                          }
-                                                        }
-                                                      ]
-                                                    }
-                                                  }
-                                                ],
-                                                "principals": [
-                                                  {
-                                                    "or_ids": {
-                                                      "ids": [
-                                                        {
-                                                          "header": {
-                                                            "name": "x-user-role",
-                                                            "string_match": {
-                                                              "exact": "system:serviceaccount:default:adk-agent-2-sa"
+                                                              "exact": "system:serviceaccount:default:adk-agent-sa"
                                                             }
                                                           }
                                                         }

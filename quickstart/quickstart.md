@@ -16,8 +16,6 @@ You will define `AuthPolicy` resources to specify which tools the agent is permi
 Before you begin, ensure you have the following tools installed and configured:
 
 - **A Kubernetes cluster**: You can use a local cluster like `kind` or `minikube`, or a cloud-based one.
-  > **Note**
-  > If your cluster doesn't have a native `LoadBalancer` implementation (common in local setups), we recommend installing one like [MetalLB](https://metallb.universe.tf/installation/) to expose the agent's web UI.
 - **`kubectl`**: The Kubernetes command-line tool. See the [official installation guide](https://kubernetes.io/docs/tasks/tools/#kubectl).
 - **A configured `kubectl` context**: Your `kubectl` should be pointing to the cluster you intend to use.
   ```shell
@@ -100,16 +98,17 @@ The final piece is the AI agent itself. We'll use a sample agent built with the 
 
 ### Step 5.1: Configure LLM Authentication
 
-The agent requires an API key to communicate with a Large Language Model (LLM). This guide uses the Google Gemini family of models.
+The agent's ability to understand requests and generate prompts is powered by a Large Language Model (LLM). This guide uses a HuggingFace model ([deepseek-ai/DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528)) for vendor neutrality.
 
-> **Note**
-> The agent is configurable and supports various LLM providers like Google, OpenAI and Anthropic. You can modify the [agent deployment manifest](/quickstart/adk-agent/deployment.yaml) to use a different provider by configuring the API key as an environment variable. This [ADK documentation site](https://google.github.io/adk-docs/agents/models/) covers the setup details.
+To authenticate with the external HuggingFace model, you'll need a HuggingFace token. Obtain one by following [this guide](https://huggingface.co/docs/hub/en/security-tokens) and store it in a Kubernetes secret:
 
-1.  Obtain an API key from [Google AI Studio](https://aistudio.google.com/).
-2.  Create a Kubernetes secret to securely store your key:
-    ```shell
-    kubectl create secret generic google-secret --from-literal=google-api-key='<PASTE-YOUR-API-KEY-HERE>'
-    ```
+```shell
+kubectl create secret generic hf-secret --from-literal=hf-token-key='<YOUR-HUGGINGFACE-TOKEN>'
+```
+
+⚠️ **Warning**: Free-tier HuggingFace accounts have strict monthly rate limits, which are easily exceeded.
+
+> **Note** You can use other HuggingFace models that support chat and tool calling by modifying the `HF_MODEL` environment variable in the [agent deployment manifest](/quickstart/adk-agent/deployment.yaml). For details on configuring other generative AI models with ADK agents, refer to the [ADK documentation](https://google.github.io/adk-docs/agents/models/).
 
 ### Step 5.2: Deploy the Agent
 
@@ -131,23 +130,22 @@ You can now interact with your agent through its web UI.
 
 ### Step 6.1: Access the Agent UI
 
-Choose one of the following methods to access the UI:
+We'll use port forwarding to access the agent's web UI for simplicity.
 
-- **Option A: Load Balancer (Cloud Clusters)**
-  If your cluster has a load balancer, get the agent's external IP address:
+```shell
+kubectl port-forward service/adk-agent-svc 8081:80 &
+```
 
-  ```shell
-  kubectl get svc adk-agent-svc -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-  ```
+Then, navigate to `http://localhost:8081` in your browser.
 
-  Open this IP address in your web browser.
-
-- **Option B: Port Forwarding (Local Clusters)**
-  If you're running a local cluster, use `kubectl port-forward`:
-  ```shell
-  kubectl port-forward service/adk-agent-svc 8081:80 &
-  ```
-  Then, navigate to `http://localhost:8081` in your browser.
+> **Note**
+> If your cluster has a `LoadBalancer` implementation (e.g., in a cloud environment or a local setup like [MetalLB](https://metallb.io/installation/)), you can also access the agent via its external IP address. Get the agent's external IP address:
+>
+> ```shell
+> kubectl get svc adk-agent-svc -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+> ```
+>
+> Open this IP address in your web browser.
 
 ### Step 6.2: Chat with the Agent
 
