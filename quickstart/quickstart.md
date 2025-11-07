@@ -174,6 +174,65 @@ Congratulations! You have successfully:
 - Run a controller that automatically configures and deploys an Envoy proxy to enforce those policies.
 - Observed how the agent's access to tools is controlled at the network level based on your policies.
 
+<details>
+<summary style="font-size: 1em; font-weight: bold;">🧪 Interested in playing more with policies?</summary>
+
+Want to see policy changes in action? Let's flip the script for the `local-mcp-backend`!
+
+1.  **Edit the `AuthPolicy`**: Open [quickstart/policy/e2e.yaml](/quickstart/policy/e2e.yaml) and modify the `auth-policy-local-mcp` to:
+
+    - **Remove** the `"add"` tool.
+    - **Add** the `"echo"` tool.
+
+    Your `auth-policy-local-mcp` section should look like this:
+
+    ```yaml
+    apiVersion: agentic.networking.x-k8s.io/v1alpha1
+    kind: AuthPolicy
+    metadata:
+      name: auth-policy-local-mcp
+    spec:
+      targetRef:
+        group: gateway.networking.x-k8s.io
+        kind: Backend
+        name: local-mcp-backend
+      action: ALLOW
+      rules:
+        - source:
+            serviceAccounts:
+              - "system:serviceaccount:default:adk-agent-sa"
+          tools:
+            - "getTinyImage"
+            - "echo" # Now allowed!
+    ```
+
+2.  **Apply the updated policy**:
+
+    ```shell
+    kubectl apply -f quickstart/policy/e2e.yaml
+    ```
+
+3.  **Re-run the controller and restart Envoy**: The controller needs to re-read the updated policies to generate a new Envoy configuration. Then, restart the Envoy deployment to apply the new configuration.
+
+    ```shell
+    # Re-run the controller to update the Envoy ConfigMap
+    go run ./main.go --gateway agentic-net-gateway --namespace default
+
+    # Restart the Envoy deployment to pick up the new config
+    kubectl rollout restart deployment/envoy-deployment -n agentic-net
+    ```
+
+4.  **Interact with the Agent again**: Go back to `http://localhost:8081` and try these prompts:
+
+    | Prompt                       | Tool Invoked        | Expected Result | Why?                                                            |
+    | :--------------------------- | :------------------ | :-------------- | :-------------------------------------------------------------- |
+    | "Can you do 2+3?"            | `add` on local MCP  | ❌ **Failure**  | The `add` tool is now _disallowed_ by the updated `AuthPolicy`. |
+    | "Can you echo back 'hello'?" | `echo` on local MCP | ✅ **Success**  | The `echo` tool is now _allowed_ by the updated `AuthPolicy`.   |
+
+    Observe how the agent's behavior changes based on your policy modifications!
+
+    </details>
+
 ## 8. Clean Up
 
 To remove all the resources created during this quickstart, run the following commands:
