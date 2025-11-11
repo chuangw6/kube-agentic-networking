@@ -96,7 +96,7 @@ static_resources:
                               policies:
                                 allow-anyone-to-initialize-and-list-tools:
                                   permissions:
-                                  - or_rules:
+                                  - and_rules:
                                       rules:
                                       - sourced_metadata:
                                           metadata_matcher:
@@ -112,10 +112,14 @@ static_resources:
                                                     exact: notifications/initialized
                                                 - string_match:
                                                     exact: tools/list
-                                      - header:
-                                          name: :method
-                                          string_match:
-                                            exact: GET
+                                  principals:
+                                  - any: true
+                                allow-http-get:
+                                  permissions:
+                                  - header:
+                                      name: :method
+                                      string_match:
+                                        exact: GET
                                   principals:
                                   - any: true
                                 allow-mcp-session-close:
@@ -180,7 +184,7 @@ static_resources:
                               policies:
                                 allow-anyone-to-initialize-and-list-tools:
                                   permissions:
-                                  - or_rules:
+                                  - and_rules:
                                       rules:
                                       - sourced_metadata:
                                           metadata_matcher:
@@ -196,10 +200,14 @@ static_resources:
                                                     exact: notifications/initialized
                                                 - string_match:
                                                     exact: tools/list
-                                      - header:
-                                          name: :method
-                                          string_match:
-                                            exact: GET
+                                  principals:
+                                  - any: true
+                                allow-http-get:
+                                  permissions:
+                                  - header:
+                                      name: :method
+                                      string_match:
+                                        exact: GET
                                   principals:
                                   - any: true
                                 allow-mcp-session-close:

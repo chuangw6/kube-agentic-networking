@@ -111,7 +111,7 @@
                                               "allow-anyone-to-initialize-and-list-tools": {
                                                 "permissions": [
                                                   {
-                                                    "or_rules": {
+                                                    "and_rules": {
                                                       "rules": [
                                                         {
                                                           "sourced_metadata": {
@@ -145,16 +145,25 @@
                                                               }
                                                             }
                                                           }
-                                                        },
-                                                        {
-                                                          "header": {
-                                                            "name": ":method",
-                                                            "string_match": {
-                                                              "exact": "GET"
-                                                            }
-                                                          }
                                                         }
                                                       ]
+                                                    }
+                                                  }
+                                                ],
+                                                "principals": [
+                                                  {
+                                                    "any": true
+                                                  }
+                                                ]
+                                              },
+                                              "allow-http-get": {
+                                                "permissions": [
+                                                  {
+                                                    "header": {
+                                                      "name": ":method",
+                                                      "string_match": {
+                                                        "exact": "GET"
+                                                      }
                                                     }
                                                   }
                                                 ],
@@ -296,7 +305,7 @@
                                               "allow-anyone-to-initialize-and-list-tools": {
                                                 "permissions": [
                                                   {
-                                                    "or_rules": {
+                                                    "and_rules": {
                                                       "rules": [
                                                         {
                                                           "sourced_metadata": {
@@ -330,16 +339,25 @@
                                                               }
                                                             }
                                                           }
-                                                        },
-                                                        {
-                                                          "header": {
-                                                            "name": ":method",
-                                                            "string_match": {
-                                                              "exact": "GET"
-                                                            }
-                                                          }
                                                         }
                                                       ]
+                                                    }
+                                                  }
+                                                ],
+                                                "principals": [
+                                                  {
+                                                    "any": true
+                                                  }
+                                                ]
+                                              },
+                                              "allow-http-get": {
+                                                "permissions": [
+                                                  {
+                                                    "header": {
+                                                      "name": ":method",
+                                                      "string_match": {
+                                                        "exact": "GET"
+                                                      }
                                                     }
                                                   }
                                                 ],

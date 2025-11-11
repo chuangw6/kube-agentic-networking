@@ -22,6 +22,9 @@ const (
 	initializedMethod                             = "notifications/initialized"
 	toolsListMethod                               = "tools/list"
 
+	// allowHTTPGet is the name of the RBAC policy that allows an HTTP GET to the MCP endpoint for SSE stream.
+	allowHTTPGet = "allow-http-get"
+
 	mcpSessionIDHeader = "mcp-session-id"
 	toolsCallMethod    = "tools/call"
 	mcpProxyFilterName = "mcp_proxy"
@@ -52,6 +55,7 @@ func rbacConfigFromAuthPolicy(authPolicyLister agenticlisters.AuthPolicyLister, 
 	if action == rbacconfigv3.RBAC_ALLOW {
 		rbacPolicies[allowMCPSessionClosePolicyName] = buildAllowMCPSessionClosePolicy()
 		rbacPolicies[allowAnyoneToInitializeAndListToolsPolicyName] = buildAllowAnyoneToInitializeAndListToolsPolicy()
+		rbacPolicies[allowHTTPGet] = buildAllowHTTPGetPolicy()
 	}
 
 	rbacConfig := &rbacv3.RBAC{
@@ -249,8 +253,8 @@ func buildAllowAnyoneToInitializeAndListToolsPolicy() *rbacconfigv3.Policy {
 		},
 		Permissions: []*rbacconfigv3.Permission{
 			{
-				Rule: &rbacconfigv3.Permission_OrRules{
-					OrRules: &rbacconfigv3.Permission_Set{
+				Rule: &rbacconfigv3.Permission_AndRules{
+					AndRules: &rbacconfigv3.Permission_Set{
 						Rules: []*rbacconfigv3.Permission{
 							{
 								Rule: &rbacconfigv3.Permission_SourcedMetadata{
@@ -273,21 +277,36 @@ func buildAllowAnyoneToInitializeAndListToolsPolicy() *rbacconfigv3.Policy {
 									},
 								},
 							},
-							{
-								// This rule explicitly allows GET requests. In the MCP protocol, after an initial POST handshake,
-								// a long-lived GET request is established to receive server-sent events. Without this rule,
-								// the RBAC filter (which primarily inspects POST request bodies via SourcedMetadata)
-								// would implicitly deny these GET requests, leading to a 403 Forbidden error.
-								Rule: &rbacconfigv3.Permission_Header{
-									Header: &routev3.HeaderMatcher{
-										Name: ":method",
-										HeaderMatchSpecifier: &routev3.HeaderMatcher_StringMatch{
-											StringMatch: &matcherv3.StringMatcher{
-												MatchPattern: &matcherv3.StringMatcher_Exact{Exact: "GET"},
-											},
-										},
-									},
-								},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// This policy explicitly allows GET requests for streamable HTTP transports.
+// In the MCP protocol, after an initial POST handshake, a long-lived GET request
+// is established to receive server-sent events (SSE). Without this rule, the RBAC
+// filter would implicitly deny these GET requests, leading to a 403 Forbidden error.
+// https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http
+func buildAllowHTTPGetPolicy() *rbacconfigv3.Policy {
+	return &rbacconfigv3.Policy{
+		Principals: []*rbacconfigv3.Principal{
+			{
+				Identifier: &rbacconfigv3.Principal_Any{
+					Any: true,
+				},
+			},
+		},
+		Permissions: []*rbacconfigv3.Permission{
+			{
+				Rule: &rbacconfigv3.Permission_Header{
+					Header: &routev3.HeaderMatcher{
+						Name: ":method",
+						HeaderMatchSpecifier: &routev3.HeaderMatcher_StringMatch{
+							StringMatch: &matcherv3.StringMatcher{
+								MatchPattern: &matcherv3.StringMatcher_Exact{Exact: "GET"},
 							},
 						},
 					},
