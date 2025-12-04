@@ -13,27 +13,27 @@ import (
 
 func (c *Controller) setupHTTPRouteEventHandlers(httprouteInformer gatewayinformers.HTTPRouteInformer) error {
 	_, err := httprouteInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.addHTTPRoute,
-		UpdateFunc: c.updateHTTPRoute,
-		DeleteFunc: c.deleteHTTPRoute,
+		AddFunc:    c.onHTTPRouteAdd,
+		UpdateFunc: c.onHTTPRouteUpdate,
+		DeleteFunc: c.onHTTPRouteDelete,
 	})
 	return err
 }
 
-func (c *Controller) addHTTPRoute(obj interface{}) {
+func (c *Controller) onHTTPRouteAdd(obj interface{}) {
 	route := obj.(*gatewayv1.HTTPRoute)
 	klog.V(4).InfoS("Adding HTTPRoute", "httproute", klog.KObj(route))
 	c.enqueueGatewaysForHTTPRoute(route.Spec.ParentRefs, route.Namespace)
 }
 
-func (c *Controller) updateHTTPRoute(old, new interface{}) {
+func (c *Controller) onHTTPRouteUpdate(old, new interface{}) {
 	oldRoute := old.(*gatewayv1.HTTPRoute)
 	newRoute := new.(*gatewayv1.HTTPRoute)
 	klog.V(4).InfoS("Updating HTTPRoute", "httproute", klog.KObj(oldRoute))
 	c.enqueueGatewaysForHTTPRoute(append(oldRoute.Spec.ParentRefs, newRoute.Spec.ParentRefs...), newRoute.Namespace)
 }
 
-func (c *Controller) deleteHTTPRoute(obj interface{}) {
+func (c *Controller) onHTTPRouteDelete(obj interface{}) {
 	route, ok := obj.(*gatewayv1.HTTPRoute)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)

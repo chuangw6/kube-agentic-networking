@@ -13,27 +13,27 @@ import (
 
 func (c *Controller) setupBackendEventHandlers(backendInformer agenticinformers.BackendInformer) error {
 	_, err := backendInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.addBackend,
-		UpdateFunc: c.updateBackend,
-		DeleteFunc: c.deleteBackend,
+		AddFunc:    c.onBackendAdd,
+		UpdateFunc: c.onBackendUpdate,
+		DeleteFunc: c.onBackendDelete,
 	})
 	return err
 }
 
-func (c *Controller) addBackend(obj interface{}) {
+func (c *Controller) onBackendAdd(obj interface{}) {
 	backend := obj.(*agenticv0alpha0.Backend)
 	klog.V(4).InfoS("Adding Backend", "backend", klog.KObj(backend))
-	c.enqueueBackend(backend)
+	c.enqueueGatewaysForBackend(backend)
 }
 
-func (c *Controller) updateBackend(old, new interface{}) {
+func (c *Controller) onBackendUpdate(old, new interface{}) {
 	oldBackend := old.(*agenticv0alpha0.Backend)
 	newBackend := new.(*agenticv0alpha0.Backend)
 	klog.V(4).InfoS("Updating Backend", "backend", klog.KObj(oldBackend))
-	c.enqueueBackend(newBackend)
+	c.enqueueGatewaysForBackend(newBackend)
 }
 
-func (c *Controller) deleteBackend(obj interface{}) {
+func (c *Controller) onBackendDelete(obj interface{}) {
 	backend, ok := obj.(*agenticv0alpha0.Backend)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -48,9 +48,9 @@ func (c *Controller) deleteBackend(obj interface{}) {
 		}
 	}
 	klog.V(4).InfoS("Deleting Backend", "backend", klog.KObj(backend))
-	c.enqueueBackend(backend)
+	c.enqueueGatewaysForBackend(backend)
 }
 
-func (c *Controller) enqueueBackend(backend *agenticv0alpha0.Backend) {
+func (c *Controller) enqueueGatewaysForBackend(backend *agenticv0alpha0.Backend) {
 	// TODO: Find the HTTPRoutes that reference this Backend, then find the Gateways that reference those HTTPRoutes, and enqueue them.
 }

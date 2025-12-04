@@ -13,27 +13,27 @@ import (
 
 func (c *Controller) setupAccessPolicyEventHandlers(accessPolicyInformer agenticinformers.AccessPolicyInformer) error {
 	_, err := accessPolicyInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.addAccessPolicy,
-		UpdateFunc: c.updateAccessPolicy,
-		DeleteFunc: c.deleteAccessPolicy,
+		AddFunc:    c.onAccessPolicyAdd,
+		UpdateFunc: c.onAccessPolicyUpdate,
+		DeleteFunc: c.onAccessPolicyDelete,
 	})
 	return err
 }
 
-func (c *Controller) addAccessPolicy(obj interface{}) {
+func (c *Controller) onAccessPolicyAdd(obj interface{}) {
 	policy := obj.(*agenticv0alpha0.AccessPolicy)
 	klog.V(4).InfoS("Adding AccessPolicy", "accesspolicy", klog.KObj(policy))
-	c.enqueueAccessPolicy(policy)
+	c.enqueueGatewaysForAccessPolicy(policy)
 }
 
-func (c *Controller) updateAccessPolicy(old, new interface{}) {
+func (c *Controller) onAccessPolicyUpdate(old, new interface{}) {
 	oldPolicy := old.(*agenticv0alpha0.AccessPolicy)
 	newPolicy := new.(*agenticv0alpha0.AccessPolicy)
 	klog.V(4).InfoS("Updating AccessPolicy", "accesspolicy", klog.KObj(oldPolicy))
-	c.enqueueAccessPolicy(newPolicy)
+	c.enqueueGatewaysForAccessPolicy(newPolicy)
 }
 
-func (c *Controller) deleteAccessPolicy(obj interface{}) {
+func (c *Controller) onAccessPolicyDelete(obj interface{}) {
 	policy, ok := obj.(*agenticv0alpha0.AccessPolicy)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -48,9 +48,9 @@ func (c *Controller) deleteAccessPolicy(obj interface{}) {
 		}
 	}
 	klog.V(4).InfoS("Deleting AccessPolicy", "accesspolicy", klog.KObj(policy))
-	c.enqueueAccessPolicy(policy)
+	c.enqueueGatewaysForAccessPolicy(policy)
 }
 
-func (c *Controller) enqueueAccessPolicy(policy *agenticv0alpha0.AccessPolicy) {
+func (c *Controller) enqueueGatewaysForAccessPolicy(policy *agenticv0alpha0.AccessPolicy) {
 	// TODO: Find the Backends that are targeted by this AccessPolicy, then find the HTTPRoutes that reference those Backends, then find the Gateways that reference those HTTPRoutes, and enqueue them.
 }
