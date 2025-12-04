@@ -121,6 +121,9 @@ func New(
 	if err := c.setupAccessPolicyEventHandlers(accessPolicyInformer); err != nil {
 		return nil, err
 	}
+	if err := c.setupServiceEventHandlers(serviceInformer); err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
