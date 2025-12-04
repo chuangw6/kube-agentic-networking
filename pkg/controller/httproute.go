@@ -23,14 +23,14 @@ func (c *Controller) setupHTTPRouteEventHandlers(httprouteInformer gatewayinform
 func (c *Controller) addHTTPRoute(obj interface{}) {
 	route := obj.(*gatewayv1.HTTPRoute)
 	klog.V(4).InfoS("Adding HTTPRoute", "httproute", klog.KObj(route))
-	c.enqueueHTTPRoute(route)
+	c.enqueueGatewaysForHTTPRoute(route.Spec.ParentRefs, route.Namespace)
 }
 
 func (c *Controller) updateHTTPRoute(old, new interface{}) {
 	oldRoute := old.(*gatewayv1.HTTPRoute)
 	newRoute := new.(*gatewayv1.HTTPRoute)
 	klog.V(4).InfoS("Updating HTTPRoute", "httproute", klog.KObj(oldRoute))
-	c.enqueueHTTPRoute(newRoute)
+	c.enqueueGatewaysForHTTPRoute(append(oldRoute.Spec.ParentRefs, newRoute.Spec.ParentRefs...), newRoute.Namespace)
 }
 
 func (c *Controller) deleteHTTPRoute(obj interface{}) {
@@ -48,9 +48,25 @@ func (c *Controller) deleteHTTPRoute(obj interface{}) {
 		}
 	}
 	klog.V(4).InfoS("Deleting HTTPRoute", "httproute", klog.KObj(route))
-	c.enqueueHTTPRoute(route)
+	c.enqueueGatewaysForHTTPRoute(route.Spec.ParentRefs, route.Namespace)
 }
 
-func (c *Controller) enqueueHTTPRoute(route *gatewayv1.HTTPRoute) {
-	// TODO: Find the Gateways that reference this HTTPRoute and enqueue them.
+func (c *Controller) enqueueGatewaysForHTTPRoute(references []gatewayv1.ParentReference, localNamespace string) {
+	gatewaysToEnqueue := make(map[string]struct{})
+	for _, ref := range references {
+		if (ref.Group != nil && string(*ref.Group) != gatewayv1.GroupName) ||
+			(ref.Kind != nil && string(*ref.Kind) != "Gateway") {
+			continue
+		}
+		namespace := localNamespace
+		if ref.Namespace != nil {
+			namespace = string(*ref.Namespace)
+		}
+		key := namespace + "/" + string(ref.Name)
+		gatewaysToEnqueue[key] = struct{}{}
+	}
+
+	for key := range gatewaysToEnqueue {
+		c.gatewayqueue.Add(key)
+	}
 }
