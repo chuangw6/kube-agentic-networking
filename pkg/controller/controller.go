@@ -39,6 +39,7 @@ import (
 	agenticclient "sigs.k8s.io/kube-agentic-networking/k8s/client/clientset/versioned"
 	agenticinformers "sigs.k8s.io/kube-agentic-networking/k8s/client/informers/externalversions/api/v0alpha0"
 	agenticlisters "sigs.k8s.io/kube-agentic-networking/k8s/client/listers/api/v0alpha0"
+	"sigs.k8s.io/kube-agentic-networking/pkg/infra/xds"
 )
 
 const (
@@ -90,6 +91,7 @@ type Controller struct {
 	jwtIssuer string
 
 	gatewayqueue workqueue.TypedRateLimitingInterface[string]
+	xdsServer    *xds.Server
 }
 
 // New returns a new *Controller with the event handlers setup for types we are interested in.
@@ -139,6 +141,7 @@ func New(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "gateway"},
 		),
+		xdsServer: xds.NewServer(ctx),
 	}
 
 	// Setup event handlers for all relevant resources.
@@ -171,8 +174,11 @@ func (c *Controller) Run(ctx context.Context, workers int) error {
 	defer runtime.HandleCrashWithContext(ctx)
 	defer c.gatewayqueue.ShutDown()
 
-	// TODO: Start the Envoy xDS server.
+	// start the xDS server
 	klog.Info("Starting the Envoy xDS server")
+	if err := c.xdsServer.Run(ctx); err != nil {
+		return fmt.Errorf("failed to start xDS server: %w", err)
+	}
 
 	klog.Info("Waiting for informer caches to sync")
 	if ok := cache.WaitForCacheSync(ctx.Done(),

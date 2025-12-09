@@ -266,12 +266,7 @@ func (t *Translator) buildEnvoyResourcesForGateway(gateway *gatewayv1.Gateway) (
 			}
 
 			// 8. translate listener into a filter chain (HTTP connection manager that references route config 'route-<port>')
-			vhSlice := make([]*routev3.VirtualHost, 0, len(virtualHostsForPort))
-			for _, vh := range virtualHostsForPort {
-				vhSlice = append(vhSlice, vh)
-			}
-
-			filterChain, err := t.translateListenerToFilterChain(gateway, listener, vhSlice, routeName)
+			filterChain, err := t.translateListenerToFilterChain(gateway, listener, routeName)
 			if err != nil {
 				meta.SetStatusCondition(&listenerStatus.Conditions, metav1.Condition{
 					Type:               string(gatewayv1.ListenerConditionProgrammed),
@@ -331,7 +326,7 @@ func (t *Translator) buildEnvoyResourcesForGateway(gateway *gatewayv1.Gateway) (
 			// For HTTPS, we create one filter chain per listener because they have unique
 			// SNI matches and TLS settings.
 			if listeners[0].Protocol == gatewayv1.HTTPProtocolType {
-				filterChain, _ := t.translateListenerToFilterChain(gateway, listeners[0], allVirtualHosts, routeName)
+				filterChain, _ := t.translateListenerToFilterChain(gateway, listeners[0], routeName)
 				envoyListener.FilterChains = []*listenerv3.FilterChain{filterChain}
 			}
 			finalEnvoyListeners = append(finalEnvoyListeners, envoyListener)
