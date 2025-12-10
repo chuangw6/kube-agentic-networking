@@ -29,6 +29,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	agenticv0alpha0 "sigs.k8s.io/kube-agentic-networking/api/v0alpha0"
 	agenticlisters "sigs.k8s.io/kube-agentic-networking/k8s/client/listers/api/v0alpha0"
+	"sigs.k8s.io/kube-agentic-networking/pkg/constants"
 )
 
 const (
@@ -75,7 +76,7 @@ func fetchBackend(namespace string, backendRef gatewayv1.BackendRef, backendList
 }
 
 func convertBackendToCluster(backend *agenticv0alpha0.XBackend) (*clusterv3.Cluster, error) {
-	clusterName := fmt.Sprintf(clusterNameFormat, backend.Namespace, backend.Name)
+	clusterName := fmt.Sprintf(constants.ClusterNameFormat, backend.Namespace, backend.Name)
 
 	// Create the base cluster configuration.
 	cluster := &clusterv3.Cluster{
@@ -149,9 +150,9 @@ func buildK8sApiCluster() (*clusterv3.Cluster, error) {
 	}
 
 	cluster := &clusterv3.Cluster{
-		Name:                 k8sAPIClusterName,
+		Name:                 constants.K8sAPIClusterName,
 		ClusterDiscoveryType: &clusterv3.Cluster_Type{Type: clusterv3.Cluster_LOGICAL_DNS},
-		LoadAssignment:       createClusterLoadAssignment(k8sAPIClusterName, "kubernetes.default.svc", 443), // Use port 443 for HTTPS
+		LoadAssignment:       createClusterLoadAssignment(constants.K8sAPIClusterName, "kubernetes.default.svc", 443), // Use port 443 for HTTPS
 		TransportSocket: &corev3.TransportSocket{
 			Name: "envoy.transport_sockets.tls",
 			ConfigType: &corev3.TransportSocket_TypedConfig{

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -45,8 +46,10 @@ func (c *Controller) onBackendAdd(obj interface{}) {
 func (c *Controller) onBackendUpdate(old, new interface{}) {
 	oldBackend := old.(*agenticv0alpha0.XBackend)
 	newBackend := new.(*agenticv0alpha0.XBackend)
-	klog.V(4).InfoS("Updating Backend", "backend", klog.KObj(oldBackend))
-	c.enqueueGatewaysForBackend(newBackend)
+	if newBackend.Generation != oldBackend.Generation || newBackend.DeletionTimestamp != oldBackend.DeletionTimestamp || !reflect.DeepEqual(newBackend.Annotations, oldBackend.Annotations) {
+		klog.V(4).InfoS("Updating Backend", "backend", klog.KObj(oldBackend))
+		c.enqueueGatewaysForBackend(newBackend)
+	}
 }
 
 func (c *Controller) onBackendDelete(obj interface{}) {

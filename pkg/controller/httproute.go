@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -45,8 +46,10 @@ func (c *Controller) onHTTPRouteAdd(obj interface{}) {
 func (c *Controller) onHTTPRouteUpdate(old, new interface{}) {
 	oldRoute := old.(*gatewayv1.HTTPRoute)
 	newRoute := new.(*gatewayv1.HTTPRoute)
-	klog.V(4).InfoS("Updating HTTPRoute", "httproute", klog.KObj(oldRoute))
-	c.enqueueGatewaysForHTTPRoute(append(oldRoute.Spec.ParentRefs, newRoute.Spec.ParentRefs...), newRoute.Namespace)
+	if newRoute.Generation != oldRoute.Generation || newRoute.DeletionTimestamp != oldRoute.DeletionTimestamp || !reflect.DeepEqual(newRoute.Annotations, oldRoute.Annotations) {
+		klog.V(4).InfoS("Updating HTTPRoute", "httproute", klog.KObj(oldRoute))
+		c.enqueueGatewaysForHTTPRoute(append(oldRoute.Spec.ParentRefs, newRoute.Spec.ParentRefs...), newRoute.Namespace)
+	}
 }
 
 func (c *Controller) onHTTPRouteDelete(obj interface{}) {

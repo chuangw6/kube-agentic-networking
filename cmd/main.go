@@ -39,8 +39,9 @@ const (
 )
 
 var (
-	masterURL  string
-	kubeconfig string
+	masterURL    string
+	kubeconfig   string
+	resyncPeriod time.Duration
 )
 
 func main() {
@@ -74,9 +75,9 @@ func main() {
 		logger.Error(err, "Error building Agentic Networking clientset")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-	sharedKubeInformers := kubeinformers.NewSharedInformerFactory(kubeClient, 60*time.Second)
-	sharedGwInformers := gatewayinformers.NewSharedInformerFactory(gatewayClientset, 60*time.Second)
-	sharedAgenticInformers := agenticinformers.NewSharedInformerFactory(agenticClientset, 60*time.Second)
+	sharedKubeInformers := kubeinformers.NewSharedInformerFactory(kubeClient, resyncPeriod)
+	sharedGwInformers := gatewayinformers.NewSharedInformerFactory(gatewayClientset, resyncPeriod)
+	sharedAgenticInformers := agenticinformers.NewSharedInformerFactory(agenticClientset, resyncPeriod)
 
 	jwtIssuer, err := discovery.JWTIssuer(cfg)
 	if err != nil {
@@ -117,4 +118,5 @@ func main() {
 func init() {
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+	flag.DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "Informer resync period")
 }

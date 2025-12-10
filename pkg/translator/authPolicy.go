@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	agenticv0alpha0 "sigs.k8s.io/kube-agentic-networking/api/v0alpha0"
 	agenticlisters "sigs.k8s.io/kube-agentic-networking/k8s/client/listers/api/v0alpha0"
+	"sigs.k8s.io/kube-agentic-networking/pkg/constants"
 )
 
 const (
@@ -103,7 +104,7 @@ func translateAccessPolicyToRBAC(accessPolicy *agenticv0alpha0.XAccessPolicy, ba
 	policies := make(map[string]*rbacconfigv3.Policy)
 
 	for i, rule := range accessPolicy.Spec.Rules {
-		policyName := fmt.Sprintf(rbacPolicyNameFormat, backend.Namespace, backend.Name, i)
+		policyName := fmt.Sprintf(constants.RBACPolicyNameFormat, backend.Namespace, backend.Name, i)
 		var principalIDs []*rbacconfigv3.Principal
 
 		var allSources []string

@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"sort"
 	"sync/atomic"
 	"time"
 
@@ -53,8 +52,6 @@ type Server struct {
 	cache   cachev3.SnapshotCache
 	server  serverv3.Server
 	version atomic.Uint64
-	Address string
-	Port    int
 }
 
 // NewServer creates a new xDS server.
@@ -91,26 +88,13 @@ func (s *Server) Run(ctx context.Context) error {
 	secretv3.RegisterSecretDiscoveryServiceServer(grpcServer, s.server)
 	runtimev3.RegisterRuntimeDiscoveryServiceServer(grpcServer, s.server)
 
-	address, err := getControlPlaneAddress()
-	if err != nil {
-		return err
-	}
-	// Listen on a random available port.
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:0", address))
+	// The xDS server listens on a fixed port (15001) on all interfaces.
+	listener, err := net.Listen("tcp", "0.0.0.0:15001")
 	if err != nil {
 		return err
 	}
 
-	addr := listener.Addr()
-	tcpAddr, ok := addr.(*net.TCPAddr)
-	if !ok {
-		return fmt.Errorf("could not assert listener address to TCPAddr: %s", addr.String())
-	}
-
-	s.Address = address
-	s.Port = tcpAddr.Port
-
-	klog.Infof("xDS management server listening on %s:%d", s.Address, s.Port)
+	klog.Infof("xDS management server listening on %s", listener.Addr().String())
 	go func() {
 		if err = grpcServer.Serve(listener); err != nil {
 			klog.Errorln("gRPC server error:", err)
@@ -140,52 +124,4 @@ func (s *Server) UpdateXDSServer(ctx context.Context, nodeid string, resources m
 	}
 	klog.V(4).Infof("Updated snapshot cache for node %s with version %d", nodeid, version)
 	return nil
-}
-
-func getControlPlaneAddress() (string, error) {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return "", err
-	}
-
-	sort.Slice(interfaces, func(i, j int) bool {
-		nameI := interfaces[i].Name
-		nameJ := interfaces[j].Name
-
-		if nameI == "docker0" {
-			return true
-		}
-		if nameJ == "docker0" {
-			return false
-		}
-
-		if nameI == "eth0" {
-			return nameJ != "docker0"
-		}
-		if nameJ == "eth0" {
-			return false
-		}
-
-		return nameI < nameJ
-	})
-
-	for _, iface := range interfaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if ok && ipNet.IP.To4() != nil && !ipNet.IP.IsLinkLocalUnicast() && !ipNet.IP.IsLoopback() {
-				return ipNet.IP.String(), nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("no suitable global unicast IPv4 address found on any active non-loopback interface")
 }

@@ -263,17 +263,20 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return nil
 	}
 
+	logger := klog.FromContext(ctx).WithValues("gateway", klog.KRef(namespace, name))
+	ctx = klog.NewContext(ctx, logger)
+
 	// Get the Gateway resource with this namespace/name
 	gateway, err := c.gateway.gatewayLister.Gateways(namespace).Get(name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			klog.InfoS("Gateway deleted", "gateway", klog.KRef(namespace, name))
-			return envoy.DeleteProxy(ctx, namespace, name)
+			logger.Info("Gateway deleted, cleaning up associated resources.")
+			return envoy.DeleteProxy(ctx, c.core.client, namespace, name)
 		}
 		return err
 	}
 
-	klog.InfoS("Syncing gateway", "gateway", klog.KObj(gateway))
+	logger.Info("Syncing gateway")
 
 	// Ensure Envoy proxy deployment and service exist.
 	nodeID, err := envoy.EnsureProxy(ctx, c.core.client, gateway, c.xdsServer)
@@ -281,16 +284,23 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	klog.InfoS("Ensured Envoy proxy for gateway exists", "gateway", klog.KObj(gateway), "nodeID", nodeID)
+	logger.Info("Ensured Envoy proxy for gateway exists", "nodeID", nodeID)
 
 	// Translate Gateway to xDS resources.
-	_, err = c.translator.TranslateGatewayToXDS(ctx, gateway)
+	resources, err := c.translator.TranslateGatewayToXDS(ctx, gateway)
 	if err != nil {
 		// TODO: Update Gateway status with the error.
 		return fmt.Errorf("failed to translate gateway to xDS resources: %w", err)
 	}
 
-	klog.InfoS("Translated gateway to xDS resources", "gateway", klog.KObj(gateway))
+	logger.Info("Translated gateway to xDS resources")
+
+	// Update the xDS server with the new resources.
+	if err := c.xdsServer.UpdateXDSServer(ctx, nodeID, resources); err != nil {
+		return fmt.Errorf("failed to update xDS server: %w", err)
+	}
+
+	logger.Info("Updated xDS server with new resources", "nodeID", nodeID)
 
 	return nil
 }

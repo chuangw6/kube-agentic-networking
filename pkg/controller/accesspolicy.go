@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -45,8 +46,10 @@ func (c *Controller) onAccessPolicyAdd(obj interface{}) {
 func (c *Controller) onAccessPolicyUpdate(old, new interface{}) {
 	oldPolicy := old.(*agenticv0alpha0.XAccessPolicy)
 	newPolicy := new.(*agenticv0alpha0.XAccessPolicy)
-	klog.V(4).InfoS("Updating AccessPolicy", "accesspolicy", klog.KObj(oldPolicy))
-	c.enqueueGatewaysForAccessPolicy(newPolicy)
+	if newPolicy.Generation != oldPolicy.Generation || newPolicy.DeletionTimestamp != oldPolicy.DeletionTimestamp || !reflect.DeepEqual(newPolicy.Annotations, oldPolicy.Annotations) {
+		klog.V(4).InfoS("Updating AccessPolicy", "accesspolicy", klog.KObj(oldPolicy))
+		c.enqueueGatewaysForAccessPolicy(newPolicy)
+	}
 }
 
 func (c *Controller) onAccessPolicyDelete(obj interface{}) {

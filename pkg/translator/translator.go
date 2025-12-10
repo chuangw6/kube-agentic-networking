@@ -38,6 +38,7 @@ import (
 	gatewayclient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gatewaylisters "sigs.k8s.io/gateway-api/pkg/client/listers/apis/v1"
 	agenticlisters "sigs.k8s.io/kube-agentic-networking/k8s/client/listers/api/v0alpha0"
+	"sigs.k8s.io/kube-agentic-networking/pkg/constants"
 )
 
 type ControllerError struct {
@@ -164,7 +165,7 @@ func (t *Translator) buildEnvoyResourcesForGateway(gateway *gatewayv1.Gateway) (
 		var filterChains []*listenerv3.FilterChain
 		// Prepare to collect ALL virtual hosts for this port into a single list.
 		virtualHostsForPort := make(map[string]*routev3.VirtualHost)
-		routeName := fmt.Sprintf(routeNameFormat, port)
+		routeName := fmt.Sprintf(constants.RouteNameFormat, port)
 
 		// All these listeners have the same port
 		for _, listener := range listeners {
@@ -242,7 +243,7 @@ func (t *Translator) buildEnvoyResourcesForGateway(gateway *gatewayv1.Gateway) (
 							vh, ok := virtualHostsForPort[domain]
 							if !ok {
 								vh = &routev3.VirtualHost{
-									Name:    fmt.Sprintf(vHostNameFormat, gateway.Name, port, domain),
+									Name:    fmt.Sprintf(constants.VHostNameFormat, gateway.Name, port, domain),
 									Domains: []string{domain},
 								}
 								virtualHostsForPort[domain] = vh
@@ -316,7 +317,7 @@ func (t *Translator) buildEnvoyResourcesForGateway(gateway *gatewayv1.Gateway) (
 		// 10. If there are any filterChains -> create an Envoy Listener for port with those filterChains
 		if len(filterChains) > 0 {
 			envoyListener := &listenerv3.Listener{
-				Name:            fmt.Sprintf(listenerNameFormat, port),
+				Name:            fmt.Sprintf(constants.ListenerNameFormat, port),
 				Address:         createEnvoyAddress(uint32(port)),
 				FilterChains:    filterChains,
 				ListenerFilters: createListenerFilters(),

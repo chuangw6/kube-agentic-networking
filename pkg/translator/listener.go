@@ -42,6 +42,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	"sigs.k8s.io/kube-agentic-networking/pkg/constants"
 )
 
 const (
@@ -374,7 +375,7 @@ func buildJwtAuthnFilter(issuer string) (*hcm.HttpFilter, error) {
 						HttpUri: &corev3.HttpUri{
 							Uri: standardK8sOIDCJWKSURI,
 							HttpUpstreamType: &corev3.HttpUri_Cluster{
-								Cluster: k8sAPIClusterName,
+								Cluster: constants.K8sAPIClusterName,
 							},
 							Timeout: durationpb.New(uriTimeout),
 						},
@@ -383,13 +384,13 @@ func buildJwtAuthnFilter(issuer string) (*hcm.HttpFilter, error) {
 				},
 				FromHeaders: []*jwt_authnv3.JwtHeader{
 					{
-						Name: saAuthTokenHeader,
+						Name: constants.SAAuthTokenHeader,
 					},
 				},
 				ClaimToHeaders: []*jwt_authnv3.JwtClaimToHeader{
 					{
 						ClaimName:  "sub",
-						HeaderName: userRoleHeader,
+						HeaderName: constants.UserRoleHeader,
 					},
 				},
 			},

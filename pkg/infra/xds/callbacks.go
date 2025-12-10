@@ -30,7 +30,7 @@ var _ serverv3.Callbacks = &callbacks{}
 type callbacks struct{}
 
 func (cb *callbacks) OnStreamOpen(ctx context.Context, id int64, typ string) error {
-	klog.V(2).Infof("xDS stream %d opened for type %s", id, typ)
+	klog.Infof("xDS stream %d opened for type %s", id, typ)
 	return nil
 }
 
@@ -39,7 +39,7 @@ func (cb *callbacks) OnStreamClosed(id int64, node *corev3.Node) {
 	if node != nil {
 		nodeID = node.GetId()
 	}
-	klog.V(2).Infof("xDS stream %d closed for node %s", id, nodeID)
+	klog.Infof("xDS stream %d closed for node %s", id, nodeID)
 }
 
 func (cb *callbacks) OnStreamRequest(id int64, req *discoveryv3.DiscoveryRequest) error {
