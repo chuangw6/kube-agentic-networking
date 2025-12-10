@@ -282,12 +282,12 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	logger.Info("Syncing gateway")
 
 	// Ensure Envoy proxy deployment and service exist.
-	nodeID, err := envoy.EnsureProxy(ctx, c.core.client, gateway, c.envoyImage)
-	if err != nil {
+	rm := envoy.NewResourceManager(c.core.client, gateway, c.envoyImage)
+	if err := rm.EnsureProxyExist(ctx); err != nil {
 		return err
 	}
 
-	logger.Info("Ensured Envoy proxy for gateway exists", "nodeID", nodeID)
+	logger.Info("Ensured Envoy proxy for gateway exists", "nodeID", rm.NodeID())
 
 	// Translate Gateway to xDS resources.
 	resources, err := c.translator.TranslateGatewayToXDS(ctx, gateway)
@@ -299,11 +299,10 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	logger.Info("Translated gateway to xDS resources")
 
 	// Update the xDS server with the new resources.
-	if err := c.xdsServer.UpdateXDSServer(ctx, nodeID, resources); err != nil {
+	if err := c.xdsServer.UpdateXDSServer(ctx, rm.NodeID(), resources); err != nil {
 		return fmt.Errorf("failed to update xDS server: %w", err)
 	}
 
-	logger.Info("Updated xDS server with new resources", "nodeID", nodeID)
-
+	logger.Info("Updated xDS server with new resources", "nodeID", rm.NodeID())
 	return nil
 }

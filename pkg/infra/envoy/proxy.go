@@ -17,12 +17,10 @@ limitations under the License.
 package envoy
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"text/template"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -38,6 +36,25 @@ import (
 	"sigs.k8s.io/kube-agentic-networking/pkg/constants"
 )
 
+// ResourceManager manages the Envoy proxy resources for a given Gateway.
+type ResourceManager struct {
+	client     kubernetes.Interface
+	gw         *gatewayv1.Gateway
+	nodeID     string
+	envoyImage string
+}
+
+// NewResourceManager creates a new ResourceManager.
+// The nodeID is generated based on the Gateway's namespace and name and is not exposed to the controller.
+func NewResourceManager(client kubernetes.Interface, gw *gatewayv1.Gateway, envoyImage string) *ResourceManager {
+	return &ResourceManager{
+		client:     client,
+		gw:         gw,
+		nodeID:     proxyName(gw.Namespace, gw.Name),
+		envoyImage: envoyImage,
+	}
+}
+
 // proxyName generates a deterministic name for the Envoy proxy resources.
 func proxyName(namespace, name string) string {
 	namespacedName := types.NamespacedName{
@@ -45,120 +62,45 @@ func proxyName(namespace, name string) string {
 		Name:      name,
 	}
 	hash := sha256.Sum256([]byte(namespacedName.String()))
-	return fmt.Sprintf("envoy-proxy-%s", hex.EncodeToString(hash[:6]))
+	return fmt.Sprintf(constants.ProxyNameFormat, hex.EncodeToString(hash[:6]))
 }
 
-const dynamicControlPlaneConfig = `node:
-  cluster: {{ .Cluster }}
-  id: {{ .ID }}
-
-dynamic_resources:
-  ads_config:
-    api_type: GRPC
-    grpc_services:
-    - envoy_grpc:
-        cluster_name: xds_cluster
-  cds_config:
-    ads: {}
-  lds_config:
-    ads: {}
-
-static_resources:
-  clusters:
-  - name: xds_cluster
-    type: STRICT_DNS
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http2_protocol_options: {}
-    load_assignment:
-      cluster_name: xds_cluster
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: {{ .ControlPlaneAddress }}
-                port_value: {{ .ControlPlanePort }}
-
-admin:
-  access_log_path: /dev/stdout
-  address:
-    socket_address:
-      address: 0.0.0.0
-      port_value: 15000
-`
-
-type configData struct {
-	Cluster             string
-	ID                  string
-	ControlPlaneAddress string
-	ControlPlanePort    int
-}
-
-// generateEnvoyBootstrapConfig returns an envoy config generated from config data
-func generateEnvoyBootstrapConfig(cluster, id string) (string, error) {
-	if cluster == "" || id == "" {
-		return "", fmt.Errorf("missing parameters for envoy config")
-	}
-
-	data := &configData{
-		Cluster:             cluster,
-		ID:                  id,
-		ControlPlaneAddress: fmt.Sprintf("%s.%s.svc.cluster.local", constants.XDSServerServiceName, constants.AgenticNetSystemNamespace),
-		ControlPlanePort:    15001,
-	}
-
-	t, err := template.New("gateway-config").Parse(dynamicControlPlaneConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse config template: %w", err)
-	}
-	// execute the template
-	var buff bytes.Buffer
-	err = t.Execute(&buff, data)
-	if err != nil {
-		return "", fmt.Errorf("error executing config template: %w", err)
-	}
-	return buff.String(), nil
-}
-
-func EnsureProxy(ctx context.Context, client kubernetes.Interface, gw *gatewayv1.Gateway, envoyImage string) (string, error) {
-	r := &resourceRender{
-		gw:         gw,
-		nodeID:     proxyName(gw.Namespace, gw.Name),
-		envoyImage: envoyImage,
-	}
+// EnsureProxyExist ensures that the Envoy proxy deployment, service, and other resources exist and are ready.
+func (r *ResourceManager) EnsureProxyExist(ctx context.Context) error {
 	logger := klog.FromContext(ctx).WithValues("resourceName", klog.KRef(constants.AgenticNetSystemNamespace, r.nodeID))
 	ctx = klog.NewContext(ctx, logger)
 
-	if err := ensureSA(ctx, client, r); err != nil {
-		return "", err
+	if err := r.ensureSA(ctx); err != nil {
+		return err
 	}
 
-	if err := ensureConfigMap(ctx, client, r); err != nil {
-		return "", err
+	if err := r.ensureConfigMap(ctx); err != nil {
+		return err
 	}
 
-	if err := ensureDeployment(ctx, client, r); err != nil {
-		return "", err
+	if err := r.ensureDeployment(ctx); err != nil {
+		return err
 	}
 
-	if err := ensureService(ctx, client, r); err != nil {
-		return "", err
+	if err := r.ensureService(ctx); err != nil {
+		return err
 	}
 
-	return r.nodeID, nil
+	return nil
 }
 
-func ensureSA(ctx context.Context, client kubernetes.Interface, r *resourceRender) error {
+func (r *ResourceManager) NodeID() string {
+	return r.nodeID
+}
+
+func (r *ResourceManager) ensureSA(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
 
-	sa := r.serviceAccount()
-	_, err := client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	sa := r.renderServiceAccount()
+	_, err := r.client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			_, err = client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Create(ctx, sa, metav1.CreateOptions{})
+			_, err = r.client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Create(ctx, sa, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to create envoy serviceaccount: %w", err)
 			}
@@ -170,17 +112,17 @@ func ensureSA(ctx context.Context, client kubernetes.Interface, r *resourceRende
 	return nil
 }
 
-func ensureConfigMap(ctx context.Context, client kubernetes.Interface, r *resourceRender) error {
+func (r *ResourceManager) ensureConfigMap(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
-	cm, err := r.configMap()
+	cm, err := r.renderConfigMap()
 	if err != nil {
 		return err
 	}
 
-	_, err = client.CoreV1().ConfigMaps(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	_, err = r.client.CoreV1().ConfigMaps(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			_, err = client.CoreV1().ConfigMaps(constants.AgenticNetSystemNamespace).Create(ctx, cm, metav1.CreateOptions{})
+			_, err = r.client.CoreV1().ConfigMaps(constants.AgenticNetSystemNamespace).Create(ctx, cm, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to create envoy configmap: %w", err)
 			}
@@ -193,14 +135,14 @@ func ensureConfigMap(ctx context.Context, client kubernetes.Interface, r *resour
 	return nil
 }
 
-func ensureDeployment(ctx context.Context, client kubernetes.Interface, r *resourceRender) error {
+func (r *ResourceManager) ensureDeployment(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
 
-	deployment := r.deployment()
-	_, err := client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	deployment := r.renderDeployment()
+	_, err := r.client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			_, err = client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Create(ctx, deployment, metav1.CreateOptions{})
+			_, err = r.client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Create(ctx, deployment, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to create envoy deployment: %w", err)
 			}
@@ -209,20 +151,20 @@ func ensureDeployment(ctx context.Context, client kubernetes.Interface, r *resou
 		}
 	}
 
-	if err := waitForDeploymentAvailable(ctx, client, r.nodeID); err != nil {
+	if err := r.waitForDeploymentAvailable(ctx); err != nil {
 		return err
 	}
 	logger.Info("Envoy proxy deployment is ready!")
 	return nil
 }
 
-func ensureService(ctx context.Context, client kubernetes.Interface, r *resourceRender) error {
+func (r *ResourceManager) ensureService(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
-	service := r.service()
-	_, err := client.CoreV1().Services(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	service := r.renderService()
+	_, err := r.client.CoreV1().Services(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			_, err = client.CoreV1().Services(constants.AgenticNetSystemNamespace).Create(ctx, service, metav1.CreateOptions{})
+			_, err = r.client.CoreV1().Services(constants.AgenticNetSystemNamespace).Create(ctx, service, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to create envoy service: %w", err)
 			}
@@ -231,18 +173,18 @@ func ensureService(ctx context.Context, client kubernetes.Interface, r *resource
 		}
 	}
 
-	if err := waitForServiceReady(ctx, client, r.nodeID); err != nil {
+	if err := r.waitForServiceReady(ctx); err != nil {
 		return err
 	}
 	logger.Info("Envoy proxy service is ready!")
 	return nil
 }
 
-func waitForServiceReady(ctx context.Context, client kubernetes.Interface, name string) error {
+func (r *ResourceManager) waitForServiceReady(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
 	logger.Info("Waiting for envoy service to be ready...")
 	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 1*time.Minute, true, func(ctx context.Context) (bool, error) {
-		svc, err := client.CoreV1().Services(constants.AgenticNetSystemNamespace).Get(ctx, name, metav1.GetOptions{})
+		svc, err := r.client.CoreV1().Services(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -252,16 +194,16 @@ func waitForServiceReady(ctx context.Context, client kubernetes.Interface, name 
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("waiting for envoy service %s to be ready: %w", name, err)
+		return fmt.Errorf("waiting for envoy service %s to be ready: %w", r.nodeID, err)
 	}
 	return nil
 }
 
-func waitForDeploymentAvailable(ctx context.Context, client kubernetes.Interface, name string) error {
+func (r *ResourceManager) waitForDeploymentAvailable(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
 	logger.Info("Waiting for envoy deployment to be available...")
 	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 1*time.Minute, true, func(ctx context.Context) (bool, error) {
-		dep, err := client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Get(ctx, name, metav1.GetOptions{})
+		dep, err := r.client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -273,7 +215,7 @@ func waitForDeploymentAvailable(ctx context.Context, client kubernetes.Interface
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("waiting for envoy deployment %s to be available: %w", name, err)
+		return fmt.Errorf("waiting for envoy deployment %s to be available: %w", r.nodeID, err)
 	}
 	return nil
 }

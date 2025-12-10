@@ -17,11 +17,15 @@ limitations under the License.
 package envoy
 
 import (
+	"bytes"
+	"fmt"
+	"text/template"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
 	"sigs.k8s.io/kube-agentic-networking/pkg/constants"
 )
 
@@ -30,14 +34,83 @@ const (
 	envoyBootstrapCfgFileName = "envoy.yaml"
 )
 
-type resourceRender struct {
-	gw         *gatewayv1.Gateway
-	nodeID     string
-	envoyImage string
+const dynamicControlPlaneConfig = `node:
+  cluster: {{ .Cluster }}
+  id: {{ .ID }}
+
+dynamic_resources:
+  ads_config:
+    api_type: GRPC
+    grpc_services:
+    - envoy_grpc:
+        cluster_name: xds_cluster
+  cds_config:
+    ads: {}
+  lds_config:
+    ads: {}
+
+static_resources:
+  clusters:
+  - name: xds_cluster
+    type: STRICT_DNS
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+    load_assignment:
+      cluster_name: xds_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: {{ .ControlPlaneAddress }}
+                port_value: {{ .ControlPlanePort }}
+
+admin:
+  access_log_path: /dev/stdout
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 15000
+`
+
+type configData struct {
+	Cluster             string
+	ID                  string
+	ControlPlaneAddress string
+	ControlPlanePort    int
 }
 
-// Create ConfigMap for envoy bootstrap config
-func (r *resourceRender) configMap() (*corev1.ConfigMap, error) {
+// generateEnvoyBootstrapConfig returns an envoy config generated from config data
+func generateEnvoyBootstrapConfig(cluster, id string) (string, error) {
+	if cluster == "" || id == "" {
+		return "", fmt.Errorf("missing parameters for envoy config")
+	}
+
+	data := &configData{
+		Cluster:             cluster,
+		ID:                  id,
+		ControlPlaneAddress: fmt.Sprintf("%s.%s.svc.cluster.local", constants.XDSServerServiceName, constants.AgenticNetSystemNamespace),
+		ControlPlanePort:    15001,
+	}
+
+	t, err := template.New("gateway-config").Parse(dynamicControlPlaneConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse config template: %w", err)
+	}
+	// execute the template
+	var buff bytes.Buffer
+	err = t.Execute(&buff, data)
+	if err != nil {
+		return "", fmt.Errorf("error executing config template: %w", err)
+	}
+	return buff.String(), nil
+}
+
+// renderConfigMap creates a ConfigMap for envoy bootstrap config.
+func (r *ResourceManager) renderConfigMap() (*corev1.ConfigMap, error) {
 	bootstrap, err := generateEnvoyBootstrapConfig(types.NamespacedName{
 		Namespace: r.gw.Namespace,
 		Name:      r.gw.Name,
@@ -57,7 +130,7 @@ func (r *resourceRender) configMap() (*corev1.ConfigMap, error) {
 	}, nil
 }
 
-func (r *resourceRender) deployment() *appsv1.Deployment {
+func (r *ResourceManager) renderDeployment() *appsv1.Deployment {
 	replicas := int32(1)
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -110,13 +183,13 @@ func (r *resourceRender) deployment() *appsv1.Deployment {
 	}
 }
 
-func (r *resourceRender) service() *corev1.Service {
+func (r *ResourceManager) renderService() *corev1.Service {
 	ports := []corev1.ServicePort{}
 	for _, listener := range r.gw.Spec.Listeners {
 		ports = append(ports, corev1.ServicePort{
 			Name:     string(listener.Name),
 			Port:     int32(listener.Port),
-			Protocol: corev1.ProtocolTCP,
+			Protocol: corev1.ProtocolTCP, // TODO : Support other protocols if needed.
 		})
 	}
 
@@ -135,7 +208,7 @@ func (r *resourceRender) service() *corev1.Service {
 	}
 }
 
-func (r *resourceRender) serviceAccount() *corev1.ServiceAccount {
+func (r *ResourceManager) renderServiceAccount() *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      r.nodeID,

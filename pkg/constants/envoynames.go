@@ -17,6 +17,8 @@ limitations under the License.
 package constants
 
 const (
+	// Envoy proxy name format
+	ProxyNameFormat = "envoy-proxy-%s"
 	// ListenerNameFormat is the format string for Envoy listener names, becoming `listener-<port>`.
 	ListenerNameFormat = "listener-%d"
 	// RouteNameFormat is the format string for Envoy route configuration names, becoming `route-<port>`.
@@ -30,9 +32,6 @@ const (
 	ClusterNameFormat = "%s-%s"
 	// RBACPolicyNameFormat is the format string for Envoy RBAC policies, becoming `<namespace>-<backend-name>-rule-<rule-index>`.
 	RBACPolicyNameFormat = "%s-%s-rule-%d"
-)
-
-const (
 	// K8sAPIClusterName is the name of the cluster that points to the Kubernetes API server.
 	K8sAPIClusterName = "kubernetes_api_cluster"
 	// SAAuthTokenHeader is the header used to carry the Kubernetes service account token.
