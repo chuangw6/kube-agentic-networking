@@ -22,11 +22,7 @@ import (
 
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	credential_injectorv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/credential_injector/v3"
-	upstream_codecv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/upstream_codec/v3"
-	hcmv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
-	http_protocol_options "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -154,11 +150,6 @@ func buildK8sApiCluster() (*clusterv3.Cluster, error) {
 		return nil, fmt.Errorf("failed to marshal UpstreamTlsContext: %w", err)
 	}
 
-	anyHttpProtocolOptions, err := buildK8sApiHttpProtocolOptions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal http protocol options: %w", err)
-	}
-
 	cluster := &clusterv3.Cluster{
 		Name:                 constants.K8sAPIClusterName,
 		ClusterDiscoveryType: &clusterv3.Cluster_Type{Type: clusterv3.Cluster_LOGICAL_DNS},
@@ -169,88 +160,6 @@ func buildK8sApiCluster() (*clusterv3.Cluster, error) {
 				TypedConfig: anyTlsContext,
 			},
 		},
-		TypedExtensionProtocolOptions: map[string]*anypb.Any{
-			"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": anyHttpProtocolOptions,
-		},
 	}
 	return cluster, nil
-}
-
-func buildK8sApiHttpProtocolOptions() (*anypb.Any, error) {
-	anyCredentialInjector, err := buildK8sApiCredentialInjector()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal credential injector: %w", err)
-	}
-
-	upstreamCodec := &upstream_codecv3.UpstreamCodec{}
-	anyUpstreamCodec, err := anypb.New(upstreamCodec)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal upstream codec: %w", err)
-	}
-
-	httpProtocolOptions := &http_protocol_options.HttpProtocolOptions{
-		UpstreamProtocolOptions: &http_protocol_options.HttpProtocolOptions_ExplicitHttpConfig_{
-			ExplicitHttpConfig: &http_protocol_options.HttpProtocolOptions_ExplicitHttpConfig{
-				ProtocolConfig: &http_protocol_options.HttpProtocolOptions_ExplicitHttpConfig_Http2ProtocolOptions{
-					Http2ProtocolOptions: &corev3.Http2ProtocolOptions{
-						ConnectionKeepalive: &corev3.KeepaliveSettings{
-							Interval: durationpb.New(30 * time.Second),
-							Timeout:  durationpb.New(5 * time.Second),
-						},
-					},
-				},
-			},
-		},
-		HttpFilters: []*hcmv3.HttpFilter{
-			{
-				Name: "envoy.filters.http.credential_injector",
-				ConfigType: &hcmv3.HttpFilter_TypedConfig{
-					TypedConfig: anyCredentialInjector,
-				},
-			},
-			{
-				Name: "envoy.extensions.filters.http.upstream_codec.v3.UpstreamCodec",
-				ConfigType: &hcmv3.HttpFilter_TypedConfig{
-					TypedConfig: anyUpstreamCodec,
-				},
-			},
-		},
-	}
-
-	anyHttpProtocolOptions, err := anypb.New(httpProtocolOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal http protocol options: %w", err)
-	}
-	return anyHttpProtocolOptions, nil
-}
-
-func buildK8sApiCredentialInjector() (*anypb.Any, error) {
-	secret := &tlsv3.Secret{
-		Type: &tlsv3.Secret_GenericSecret{
-			GenericSecret: &tlsv3.GenericSecret{
-				Secret: &corev3.DataSource{
-					Specifier: &corev3.DataSource_Filename{
-						Filename: "/var/run/secrets/kubernetes.io/serviceaccount/token",
-					},
-				},
-			},
-		},
-	}
-	secretAny, err := anypb.New(secret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal generic provider config: %w", err)
-	}
-
-	credentialInjector := &credential_injectorv3.CredentialInjector{
-		Credential: &corev3.TypedExtensionConfig{
-			Name:        "envoy.extensions.transport_sockets.tls.v3.Secret",
-			TypedConfig: secretAny,
-		},
-		Overwrite: true,
-	}
-	anyCredentialInjector, err := anypb.New(credentialInjector)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal credential injector: %w", err)
-	}
-	return anyCredentialInjector, nil
 }
