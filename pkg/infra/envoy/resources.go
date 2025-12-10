@@ -28,15 +28,12 @@ import (
 const (
 	// envoyBootstrapCfgFileName is the name of the Envoy configuration file.
 	envoyBootstrapCfgFileName = "envoy.yaml"
-
-	// Envoy proxy image
-	// TODO: make this configurable
-	envoyImage = "envoyproxy/envoy:v1.36-latest"
 )
 
 type resourceRender struct {
-	gw     *gatewayv1.Gateway
-	nodeID string
+	gw         *gatewayv1.Gateway
+	nodeID     string
+	envoyImage string
 }
 
 // Create ConfigMap for envoy bootstrap config
@@ -85,7 +82,7 @@ func (r *resourceRender) deployment() *appsv1.Deployment {
 					Containers: []corev1.Container{
 						{
 							Name:    "envoy-proxy",
-							Image:   envoyImage,
+							Image:   r.envoyImage,
 							Command: []string{"envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "debug"},
 							VolumeMounts: []corev1.VolumeMount{
 								{

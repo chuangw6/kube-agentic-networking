@@ -91,11 +91,9 @@ spec:
           imagePullPolicy: Always
           command:
             - "/manager"
-          # Let the controller use in-cluster config.
           args:
-            - "--kubeconfig="
-            - "--master="
-            - "--v=5"
+            - "--envoy-image=envoyproxy/envoy:v1.36-latest"
+            - "--v=5" # Set log level to 5 (debug)
   revisionHistoryLimit: 1
 ---
 apiVersion: v1

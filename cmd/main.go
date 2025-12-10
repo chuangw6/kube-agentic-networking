@@ -41,8 +41,16 @@ const (
 var (
 	masterURL    string
 	kubeconfig   string
+	envoyImage   string
 	resyncPeriod time.Duration
 )
+
+func init() {
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster. Leaving empty assumes in-cluster configuration.")
+	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster. Leaving empty assumes in-cluster configuration.")
+	flag.StringVar(&envoyImage, "envoy-image", "", "The image of the envoy proxy.")
+	flag.DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "Informer resync period")
+}
 
 func main() {
 	klog.InitFlags(nil)
@@ -51,6 +59,11 @@ func main() {
 	// set up signals so we handle the shutdown signal gracefully
 	ctx := context.Background()
 	logger := klog.FromContext(ctx)
+
+	if envoyImage == "" {
+		logger.Error(nil, "--envoy-image cannot be empty")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
 
 	cfg, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
 	if err != nil {
@@ -87,6 +100,7 @@ func main() {
 	c, err := controller.New(
 		ctx,
 		jwtIssuer,
+		envoyImage,
 		kubeClient,
 		gatewayClientset,
 		agenticClientset,
@@ -113,10 +127,4 @@ func main() {
 		logger.Error(err, "Error running controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-}
-
-func init() {
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
-	flag.DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "Informer resync period")
 }

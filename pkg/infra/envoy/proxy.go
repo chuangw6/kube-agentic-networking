@@ -36,7 +36,6 @@ import (
 
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	"sigs.k8s.io/kube-agentic-networking/pkg/constants"
-	"sigs.k8s.io/kube-agentic-networking/pkg/infra/xds"
 )
 
 // proxyName generates a deterministic name for the Envoy proxy resources.
@@ -124,10 +123,11 @@ func generateEnvoyBootstrapConfig(cluster, id string) (string, error) {
 	return buff.String(), nil
 }
 
-func EnsureProxy(ctx context.Context, client kubernetes.Interface, gw *gatewayv1.Gateway, xdsServer *xds.Server) (string, error) {
+func EnsureProxy(ctx context.Context, client kubernetes.Interface, gw *gatewayv1.Gateway, envoyImage string) (string, error) {
 	r := &resourceRender{
-		gw:     gw,
-		nodeID: proxyName(gw.Namespace, gw.Name),
+		gw:         gw,
+		nodeID:     proxyName(gw.Namespace, gw.Name),
+		envoyImage: envoyImage,
 	}
 	logger := klog.FromContext(ctx).WithValues("resourceName", klog.KRef(constants.AgenticNetSystemNamespace, r.nodeID))
 	ctx = klog.NewContext(ctx, logger)

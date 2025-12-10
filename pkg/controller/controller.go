@@ -90,7 +90,8 @@ type Controller struct {
 	gateway gatewayResources
 	agentic agenticNetResources
 
-	jwtIssuer string
+	jwtIssuer  string
+	envoyImage string
 
 	gatewayqueue workqueue.TypedRateLimitingInterface[string]
 	xdsServer    *xds.Server
@@ -101,6 +102,7 @@ type Controller struct {
 func New(
 	ctx context.Context,
 	jwtIssuer string,
+	envoyImage string,
 	kubeClientSet kubernetes.Interface,
 	gwClientSet gatewayclient.Interface,
 	agenticClientSet agenticclient.Interface,
@@ -139,7 +141,8 @@ func New(
 			accessPolicyLister: accessPolicyInformer.Lister(),
 			accessPolicySynced: accessPolicyInformer.Informer().HasSynced,
 		},
-		jwtIssuer: jwtIssuer,
+		jwtIssuer:  jwtIssuer,
+		envoyImage: envoyImage,
 		gatewayqueue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "gateway"},
@@ -279,7 +282,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	logger.Info("Syncing gateway")
 
 	// Ensure Envoy proxy deployment and service exist.
-	nodeID, err := envoy.EnsureProxy(ctx, c.core.client, gateway, c.xdsServer)
+	nodeID, err := envoy.EnsureProxy(ctx, c.core.client, gateway, c.envoyImage)
 	if err != nil {
 		return err
 	}
