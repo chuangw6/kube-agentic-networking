@@ -39,7 +39,9 @@ import (
 	agenticclient "sigs.k8s.io/kube-agentic-networking/k8s/client/clientset/versioned"
 	agenticinformers "sigs.k8s.io/kube-agentic-networking/k8s/client/informers/externalversions/api/v0alpha0"
 	agenticlisters "sigs.k8s.io/kube-agentic-networking/k8s/client/listers/api/v0alpha0"
+	"sigs.k8s.io/kube-agentic-networking/pkg/infra/envoy"
 	"sigs.k8s.io/kube-agentic-networking/pkg/infra/xds"
+	"sigs.k8s.io/kube-agentic-networking/pkg/translator"
 )
 
 const (
@@ -92,6 +94,7 @@ type Controller struct {
 
 	gatewayqueue workqueue.TypedRateLimitingInterface[string]
 	xdsServer    *xds.Server
+	translator   *translator.Translator
 }
 
 // New returns a new *Controller with the event handlers setup for types we are interested in.
@@ -143,6 +146,19 @@ func New(
 		),
 		xdsServer: xds.NewServer(ctx),
 	}
+
+	c.translator = translator.New(
+		jwtIssuer,
+		kubeClientSet,
+		gwClientSet,
+		namespaceInformer.Lister(),
+		serviceInformer.Lister(),
+		secretInformer.Lister(),
+		gatewayInformer.Lister(),
+		httprouteInformer.Lister(),
+		accessPolicyInformer.Lister(),
+		backendInformer.Lister(),
+	)
 
 	// Setup event handlers for all relevant resources.
 	if err := c.setupGatewayClassEventHandlers(gatewayClassInformer); err != nil {
@@ -252,20 +268,29 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			klog.InfoS("Gateway deleted", "gateway", klog.KRef(namespace, name))
-			return nil
+			return envoy.DeleteProxy(ctx, namespace, name)
 		}
 		return err
 	}
 
 	klog.InfoS("Syncing gateway", "gateway", klog.KObj(gateway))
 
-	// TODO: Implement the reconciliation logic here.
-	// This will involve:
-	// 1. Finding all relevant resources (HTTPRoutes, Backends, Services, AccessPolicies).
-	// 2. Validating them.
-	// 3. Generating an Envoy configuration snapshot.
-	// 4. Updating the xDS cache with the new snapshot.
+	// Ensure Envoy proxy deployment and service exist.
+	nodeID, err := envoy.EnsureProxy(ctx, c.core.client, gateway, c.xdsServer)
+	if err != nil {
+		return err
+	}
 
-	klog.InfoS("Finished syncing gateway", "gateway", klog.KRef(namespace, name))
+	klog.InfoS("Ensured Envoy proxy for gateway exists", "gateway", klog.KObj(gateway), "nodeID", nodeID)
+
+	// Translate Gateway to xDS resources.
+	_, err = c.translator.TranslateGatewayToXDS(ctx, gateway)
+	if err != nil {
+		// TODO: Update Gateway status with the error.
+		return fmt.Errorf("failed to translate gateway to xDS resources: %w", err)
+	}
+
+	klog.InfoS("Translated gateway to xDS resources", "gateway", klog.KObj(gateway))
+
 	return nil
 }
