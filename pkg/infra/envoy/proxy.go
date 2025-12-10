@@ -132,6 +132,10 @@ func EnsureProxy(ctx context.Context, client kubernetes.Interface, gw *gatewayv1
 	logger := klog.FromContext(ctx).WithValues("resourceName", klog.KRef(constants.AgenticNetSystemNamespace, r.nodeID))
 	ctx = klog.NewContext(ctx, logger)
 
+	if err := ensureSA(ctx, client, r); err != nil {
+		return "", err
+	}
+
 	if err := ensureConfigMap(ctx, client, r); err != nil {
 		return "", err
 	}
@@ -145,6 +149,25 @@ func EnsureProxy(ctx context.Context, client kubernetes.Interface, gw *gatewayv1
 	}
 
 	return r.nodeID, nil
+}
+
+func ensureSA(ctx context.Context, client kubernetes.Interface, r *resourceRender) error {
+	logger := klog.FromContext(ctx)
+
+	sa := r.serviceAccount()
+	_, err := client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			_, err = client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Create(ctx, sa, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to create envoy serviceaccount: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to get envoy serviceaccount: %w", err)
+		}
+	}
+	logger.Info("Envoy proxy serviceaccount is ready!")
+	return nil
 }
 
 func ensureConfigMap(ctx context.Context, client kubernetes.Interface, r *resourceRender) error {
@@ -279,6 +302,14 @@ func DeleteProxy(ctx context.Context, client kubernetes.Interface, namespace, na
 		return fmt.Errorf("failed to delete envoy configmap: %w", err)
 	}
 	logger.Info("Envoy configmap deleted")
+
+	// Delete ServiceAccount
+	err = client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete envoy serviceaccount: %w", err)
+	}
+	logger.Info("Envoy serviceaccount deleted")
+
 	// TODO: Clean up xds cache, though it should be ok if we don't.
 	return nil
 }

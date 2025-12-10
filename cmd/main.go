@@ -31,7 +31,7 @@ import (
 	agenticclient "sigs.k8s.io/kube-agentic-networking/k8s/client/clientset/versioned"
 	agenticinformers "sigs.k8s.io/kube-agentic-networking/k8s/client/informers/externalversions"
 	"sigs.k8s.io/kube-agentic-networking/pkg/controller"
-	discovery "sigs.k8s.io/kube-agentic-networking/pkg/dicovery"
+	discovery "sigs.k8s.io/kube-agentic-networking/pkg/discovery"
 )
 
 const (

@@ -31,7 +31,7 @@ const (
 
 	// Envoy proxy image
 	// TODO: make this configurable
-	envoyImage = "envoyproxy/envoy:contrib-v1.36-latest"
+	envoyImage = "envoyproxy/envoy:v1.36-latest"
 )
 
 type resourceRender struct {
@@ -39,8 +39,8 @@ type resourceRender struct {
 	nodeID string
 }
 
+// Create ConfigMap for envoy bootstrap config
 func (r *resourceRender) configMap() (*corev1.ConfigMap, error) {
-	// Create ConfigMap for envoy bootstrap config
 	bootstrap, err := generateEnvoyBootstrapConfig(types.NamespacedName{
 		Namespace: r.gw.Namespace,
 		Name:      r.gw.Name,
@@ -81,11 +81,12 @@ func (r *resourceRender) deployment() *appsv1.Deployment {
 					},
 				},
 				Spec: corev1.PodSpec{
+					ServiceAccountName: r.nodeID,
 					Containers: []corev1.Container{
 						{
 							Name:    "envoy-proxy",
 							Image:   envoyImage,
-							Command: []string{"envoy", "-c", "/etc/envoy/envoy.yaml"},
+							Command: []string{"envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "debug"},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "envoy-config",
@@ -133,6 +134,15 @@ func (r *resourceRender) service() *corev1.Service {
 				"app": r.nodeID,
 			},
 			Ports: ports,
+		},
+	}
+}
+
+func (r *resourceRender) serviceAccount() *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      r.nodeID,
+			Namespace: constants.AgenticNetSystemNamespace,
 		},
 	}
 }

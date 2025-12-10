@@ -92,7 +92,7 @@ func findAccessPolicyForBackend(backend *agenticv0alpha0.XBackend, accessPolicyL
 	// TODO: Enforce this uniqueness constraint at the API level or merge multiple policies if needed.
 	for _, accessPolicy := range allAccessPolicies {
 		for _, targetRef := range accessPolicy.Spec.TargetRefs {
-			if targetRef.Kind == "Backend" && string(targetRef.Name) == backend.Name {
+			if targetRef.Kind == "XBackend" && string(targetRef.Name) == backend.Name {
 				return accessPolicy, nil
 			}
 		}
@@ -116,7 +116,7 @@ func translateAccessPolicyToRBAC(accessPolicy *agenticv0alpha0.XAccessPolicy, ba
 			if ns == "" {
 				ns = accessPolicy.Namespace
 			}
-			allSources = append(allSources, fmt.Sprintf("%s/%s", ns, rule.Source.ServiceAccount.Name))
+			allSources = append(allSources, fmt.Sprintf("system:serviceaccount:%s:%s", ns, rule.Source.ServiceAccount.Name))
 		}
 
 		if len(allSources) > 0 {
