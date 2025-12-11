@@ -44,10 +44,6 @@ import (
 	"sigs.k8s.io/kube-agentic-networking/pkg/translator"
 )
 
-const (
-	controllerName = "sig.k8s.io/kube-agentic-networking-controller"
-)
-
 type coreResources struct {
 	client kubernetes.Interface
 
