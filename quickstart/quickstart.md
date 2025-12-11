@@ -23,12 +23,6 @@ Before you begin, ensure you have the following tools installed and configured:
   ```shell
   kubectl config use-context <YOUR-CLUSTER-NAME>
   ```
-- **Go**: The Go programming language toolchain, required to run the controller.
-- **A local clone of this repository**:
-  ```shell
-  git clone https://github.com/kubernetes-sigs/kube-agentic-networking.git
-  cd kube-agentic-networking
-  ```
 
 ## 2. Set Up the Kubernetes Environment
 
@@ -47,8 +41,14 @@ kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/re
 Next, install the `AuthPolicy` and `Backend` CRDs specific to this project:
 
 ```shell
-kubectl apply -f k8s/crds/agentic.networking.x-k8s.io_authpolicies.yaml
-kubectl apply -f k8s/crds/agentic.networking.x-k8s.io_backends.yaml
+kubectl apply --server-side -f https://github.com/kubernetes-sigs/kube-agentic-networking/blob/prototype/k8s/crds/agentic.prototype.x-k8s.io_xaccesspolicies.yaml
+kubectl apply --server-side -f https://github.com/kubernetes-sigs/kube-agentic-networking/blob/prototype/k8s/crds/agentic.prototype.x-k8s.io_xbackends.yaml
+```
+
+### Step 2.3: Create a namespace for the quickstart
+
+```shell
+kubectl create namespace quickstart-ns
 ```
 
 ### Step 2.3: Deploy the In-Cluster MCP Server
@@ -108,6 +108,7 @@ The agent's ability to understand requests and generate responses is powered by 
 1.  Obtain an API key from [Google AI Studio](https://aistudio.google.com/).
 2.  Create a Kubernetes secret to securely store your key:
     ```shell
+    # TODO namespace
     kubectl create secret generic google-secret --from-literal=google-api-key='<PASTE-YOUR-API-KEY-HERE>'
     ```
 
