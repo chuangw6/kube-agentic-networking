@@ -42,6 +42,7 @@ type ResourceManager struct {
 	gw         *gatewayv1.Gateway
 	nodeID     string
 	envoyImage string
+	namespace  string
 }
 
 // NewResourceManager creates a new ResourceManager.
@@ -52,6 +53,7 @@ func NewResourceManager(client kubernetes.Interface, gw *gatewayv1.Gateway, envo
 		gw:         gw,
 		nodeID:     proxyName(gw.Namespace, gw.Name),
 		envoyImage: envoyImage,
+		namespace:  gw.Namespace,
 	}
 }
 
@@ -67,7 +69,7 @@ func proxyName(namespace, name string) string {
 
 // EnsureProxyExist ensures that the Envoy proxy deployment, service, and other resources exist and are ready.
 func (r *ResourceManager) EnsureProxyExist(ctx context.Context) error {
-	logger := klog.FromContext(ctx).WithValues("resourceName", klog.KRef(constants.AgenticNetSystemNamespace, r.nodeID))
+	logger := klog.FromContext(ctx).WithValues("resourceName", klog.KRef(r.namespace, r.nodeID))
 	ctx = klog.NewContext(ctx, logger)
 
 	if err := r.ensureSA(ctx); err != nil {
@@ -97,10 +99,10 @@ func (r *ResourceManager) ensureSA(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
 
 	sa := r.renderServiceAccount()
-	_, err := r.client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	_, err := r.client.CoreV1().ServiceAccounts(sa.Namespace).Get(ctx, sa.Name, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			_, err = r.client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Create(ctx, sa, metav1.CreateOptions{})
+			_, err = r.client.CoreV1().ServiceAccounts(sa.Namespace).Create(ctx, sa, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to create envoy serviceaccount: %w", err)
 			}
@@ -119,10 +121,10 @@ func (r *ResourceManager) ensureConfigMap(ctx context.Context) error {
 		return err
 	}
 
-	_, err = r.client.CoreV1().ConfigMaps(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	_, err = r.client.CoreV1().ConfigMaps(cm.Namespace).Get(ctx, cm.Name, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			_, err = r.client.CoreV1().ConfigMaps(constants.AgenticNetSystemNamespace).Create(ctx, cm, metav1.CreateOptions{})
+			_, err = r.client.CoreV1().ConfigMaps(cm.Namespace).Create(ctx, cm, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to create envoy configmap: %w", err)
 			}
@@ -139,10 +141,10 @@ func (r *ResourceManager) ensureDeployment(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
 
 	deployment := r.renderDeployment()
-	_, err := r.client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	_, err := r.client.AppsV1().Deployments(deployment.Namespace).Get(ctx, deployment.Name, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			_, err = r.client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Create(ctx, deployment, metav1.CreateOptions{})
+			_, err = r.client.AppsV1().Deployments(deployment.Namespace).Create(ctx, deployment, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to create envoy deployment: %w", err)
 			}
@@ -151,7 +153,7 @@ func (r *ResourceManager) ensureDeployment(ctx context.Context) error {
 		}
 	}
 
-	if err := r.waitForDeploymentAvailable(ctx); err != nil {
+	if err := waitForDeploymentAvailable(ctx, r.client, deployment.Namespace, deployment.Name); err != nil {
 		return err
 	}
 	logger.Info("Envoy proxy deployment is ready!")
@@ -161,10 +163,10 @@ func (r *ResourceManager) ensureDeployment(ctx context.Context) error {
 func (r *ResourceManager) ensureService(ctx context.Context) error {
 	logger := klog.FromContext(ctx)
 	service := r.renderService()
-	_, err := r.client.CoreV1().Services(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+	_, err := r.client.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			_, err = r.client.CoreV1().Services(constants.AgenticNetSystemNamespace).Create(ctx, service, metav1.CreateOptions{})
+			_, err = r.client.CoreV1().Services(service.Namespace).Create(ctx, service, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to create envoy service: %w", err)
 			}
@@ -173,18 +175,18 @@ func (r *ResourceManager) ensureService(ctx context.Context) error {
 		}
 	}
 
-	if err := r.waitForServiceReady(ctx); err != nil {
+	if err := waitForServiceReady(ctx, r.client, service.Namespace, service.Name); err != nil {
 		return err
 	}
 	logger.Info("Envoy proxy service is ready!")
 	return nil
 }
 
-func (r *ResourceManager) waitForServiceReady(ctx context.Context) error {
+func waitForServiceReady(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
 	logger := klog.FromContext(ctx)
 	logger.Info("Waiting for envoy service to be ready...")
 	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 1*time.Minute, true, func(ctx context.Context) (bool, error) {
-		svc, err := r.client.CoreV1().Services(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+		svc, err := client.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -194,16 +196,16 @@ func (r *ResourceManager) waitForServiceReady(ctx context.Context) error {
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("waiting for envoy service %s to be ready: %w", r.nodeID, err)
+		return fmt.Errorf("waiting for envoy service %s to be ready: %w", name, err)
 	}
 	return nil
 }
 
-func (r *ResourceManager) waitForDeploymentAvailable(ctx context.Context) error {
+func waitForDeploymentAvailable(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
 	logger := klog.FromContext(ctx)
 	logger.Info("Waiting for envoy deployment to be available...")
 	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 1*time.Minute, true, func(ctx context.Context) (bool, error) {
-		dep, err := r.client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Get(ctx, r.nodeID, metav1.GetOptions{})
+		dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -215,38 +217,38 @@ func (r *ResourceManager) waitForDeploymentAvailable(ctx context.Context) error 
 		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("waiting for envoy deployment %s to be available: %w", r.nodeID, err)
+		return fmt.Errorf("waiting for envoy deployment %s to be available: %w", name, err)
 	}
 	return nil
 }
 
 func DeleteProxy(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
 	nodeID := proxyName(namespace, name)
-	logger := klog.FromContext(ctx).WithValues("resourceName", klog.KRef(constants.AgenticNetSystemNamespace, nodeID))
+	logger := klog.FromContext(ctx).WithValues("resourceName", klog.KRef(namespace, nodeID))
 
 	// Delete Deployment
-	err := client.AppsV1().Deployments(constants.AgenticNetSystemNamespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
+	err := client.AppsV1().Deployments(namespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete envoy deployment: %w", err)
 	}
 	logger.Info("Envoy deployment deleted")
 
 	// Delete Service
-	err = client.CoreV1().Services(constants.AgenticNetSystemNamespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
+	err = client.CoreV1().Services(namespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete envoy service: %w", err)
 	}
 	logger.Info("Envoy service deleted")
 
 	// Delete ConfigMap
-	err = client.CoreV1().ConfigMaps(constants.AgenticNetSystemNamespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
+	err = client.CoreV1().ConfigMaps(namespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete envoy configmap: %w", err)
 	}
 	logger.Info("Envoy configmap deleted")
 
 	// Delete ServiceAccount
-	err = client.CoreV1().ServiceAccounts(constants.AgenticNetSystemNamespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
+	err = client.CoreV1().ServiceAccounts(namespace).Delete(ctx, nodeID, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete envoy serviceaccount: %w", err)
 	}

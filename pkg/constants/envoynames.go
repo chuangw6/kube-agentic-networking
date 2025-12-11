@@ -19,6 +19,9 @@ package constants
 const (
 	// Envoy proxy name format
 	ProxyNameFormat = "envoy-proxy-%s"
+	// EnvoyBootstrapCfgFileName is the name of the Envoy bootstrap configuration file.
+	EnvoyBootstrapCfgFileName = "envoy.yaml"
+
 	// ListenerNameFormat is the format string for Envoy listener names, becoming `listener-<port>`.
 	ListenerNameFormat = "listener-%d"
 	// RouteNameFormat is the format string for Envoy route configuration names, becoming `route-<port>`.

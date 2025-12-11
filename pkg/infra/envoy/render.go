@@ -25,13 +25,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"sigs.k8s.io/kube-agentic-networking/pkg/constants"
-)
-
-const (
-	// envoyBootstrapCfgFileName is the name of the Envoy configuration file.
-	envoyBootstrapCfgFileName = "envoy.yaml"
 )
 
 const dynamicControlPlaneConfig = `node:
@@ -121,11 +117,12 @@ func (r *ResourceManager) renderConfigMap() (*corev1.ConfigMap, error) {
 
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.nodeID,
-			Namespace: constants.AgenticNetSystemNamespace,
+			Name:            r.nodeID,
+			Namespace:       r.namespace,
+			OwnerReferences: ownerRef(r.gw),
 		},
 		Data: map[string]string{
-			envoyBootstrapCfgFileName: bootstrap,
+			constants.EnvoyBootstrapCfgFileName: bootstrap,
 		},
 	}, nil
 }
@@ -134,8 +131,9 @@ func (r *ResourceManager) renderDeployment() *appsv1.Deployment {
 	replicas := int32(1)
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.nodeID,
-			Namespace: constants.AgenticNetSystemNamespace,
+			Name:            r.nodeID,
+			Namespace:       r.namespace,
+			OwnerReferences: ownerRef(r.gw),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
@@ -156,7 +154,7 @@ func (r *ResourceManager) renderDeployment() *appsv1.Deployment {
 						{
 							Name:    "envoy-proxy",
 							Image:   r.envoyImage,
-							Command: []string{"envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "debug"},
+							Command: []string{"envoy", "-c", fmt.Sprintf("/etc/envoy/%s", constants.EnvoyBootstrapCfgFileName), "--log-level", "debug"},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "envoy-config",
@@ -195,8 +193,9 @@ func (r *ResourceManager) renderService() *corev1.Service {
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.nodeID,
-			Namespace: constants.AgenticNetSystemNamespace,
+			Name:            r.nodeID,
+			Namespace:       r.namespace,
+			OwnerReferences: ownerRef(r.gw),
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
@@ -211,8 +210,13 @@ func (r *ResourceManager) renderService() *corev1.Service {
 func (r *ResourceManager) renderServiceAccount() *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.nodeID,
-			Namespace: constants.AgenticNetSystemNamespace,
+			Name:            r.nodeID,
+			Namespace:       r.namespace,
+			OwnerReferences: ownerRef(r.gw),
 		},
 	}
+}
+
+func ownerRef(gw *gatewayv1.Gateway) []metav1.OwnerReference {
+	return []metav1.OwnerReference{*metav1.NewControllerRef(gw, gatewayv1.SchemeGroupVersion.WithKind("Gateway"))}
 }
