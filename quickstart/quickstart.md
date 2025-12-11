@@ -1,6 +1,6 @@
 # Agentic Networking Quickstart
 
-> ⚠️ **Disclaimer**: This quickstart demonstrates a proof-of-concept. The current implementation is not production-ready. For example, the API is `v1alpha1` and subject to breaking changes in upcoming months. Additionally, the controller does not automatically reconcile on CRD changes.
+> ⚠️ **Disclaimer**: This quickstart demonstrates a proof-of-concept. The current implementation is not production-ready.
 
 Welcome! This guide provides a hands-on walkthrough for getting started with the Kube Agentic Networking project. In just a few steps, you'll learn how to deploy an AI agent to your Kubernetes cluster and use declarative, high-level policies to control its access to various tools.
 
@@ -11,7 +11,7 @@ The goal of this quickstart is to demonstrate how to use the Agentic Networking 
 1.  **An in-cluster MCP server**: An instance of the [`everything` reference server](https://github.com/modelcontextprotocol/servers/tree/main/src/everything), running inside your cluster.
 2.  **A remote MCP server**: The public [`DeepWiki` server](https://docs.devin.ai/work-with-devin/deepwiki-mcp), hosted externally.
 
-You will define `AuthPolicy` resources to specify which tools the agent is permitted to use from each server and observe how the Envoy proxy, configured by the Agentic Networking controller, enforces these rules.
+You will define `XAccessPolicy` resources to specify which tools the agent is permitted to use from each server and observe how the Envoy proxy, configured by the Agentic Networking controller, enforces these rules.
 
 ## 1. Prerequisites
 
@@ -22,6 +22,12 @@ Before you begin, ensure you have the following tools installed and configured:
 - **A configured `kubectl` context**: Your `kubectl` should be pointing to the cluster you intend to use.
   ```shell
   kubectl config use-context <YOUR-CLUSTER-NAME>
+  ```
+- A local clone of this repository:
+  ```shell
+  git clone https://github.com/chuangw6/kube-agentic-networking.git
+  cd kube-agentic-networking
+  git switch c-dev
   ```
 
 ## 2. Set Up the Kubernetes Environment
@@ -38,11 +44,11 @@ kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/re
 
 ### Step 2.2: Install Agentic Networking CRDs
 
-Next, install the `AuthPolicy` and `Backend` CRDs specific to this project:
+Next, install the `XAccessPolicy` and `XBackend` CRDs specific to this project:
 
 ```shell
-kubectl apply --server-side -f https://github.com/kubernetes-sigs/kube-agentic-networking/blob/prototype/k8s/crds/agentic.prototype.x-k8s.io_xaccesspolicies.yaml
-kubectl apply --server-side -f https://github.com/kubernetes-sigs/kube-agentic-networking/blob/prototype/k8s/crds/agentic.prototype.x-k8s.io_xbackends.yaml
+kubectl apply -f k8s/crds/agentic.prototype.x-k8s.io_xbackends.yaml
+kubectl apply -f k8s/crds/agentic.prototype.x-k8s.io_xaccesspolicies.yaml
 ```
 
 ### Step 2.3: Create a namespace for the quickstart
@@ -51,48 +57,48 @@ kubectl apply --server-side -f https://github.com/kubernetes-sigs/kube-agentic-n
 kubectl create namespace quickstart-ns
 ```
 
-### Step 2.3: Deploy the In-Cluster MCP Server
+### Step 2.4: Deploy the In-Cluster MCP Server
 
-Deploy the `everything` MCP reference server, which will act as the local tool provider for our agent.
+Deploy the `everything` MCP reference server, which will act as the local tool provider for our agent, into the `quickstart-ns` namespace.
 
 ```shell
 kubectl apply -f quickstart/mcpserver/deployment.yaml
 ```
 
-## 3. Define and Apply Network Policies
+## 3. Deploy the Agentic Networking Controller
 
-Now, we'll define the core networking resources that describe our desired agent behavior. The [quickstart/policy/e2e.yaml](/quickstart/policy/e2e.yaml) file contains all the necessary resources:
+Now it's time to deploy the Agentic Networking controller. The controller runs in the cluster, watches for Gateway API and Agentic Networking resources (`XBackend`, `XAccessPolicy`), and manages the lifecycle of Envoy proxies.
 
-- **Gateway**: Defines the entry point for traffic, listening on port `10001`.
-- **Backend**: Two `Backend` resources define the connection details for our local and remote MCP servers.
-- **HTTPRoute**: Two `HTTPRoute` resources map URL paths (`/local/mcp` and `/remote/mcp`) to their respective `Backend`.
-- **AuthPolicy**: Two `AuthPolicy` resources define the access rules. They specify that the agent (`adk-agent-sa` service account) is only allowed to use the `add` and `getTinyImage` tools from the local server, and the `read_wiki_structure` tool from the remote server.
+Deploy the controller to the `agentic-net-system` namespace:
 
-Apply these resources to your cluster:
+```shell
+kubectl apply -f k8s/deploy/deployment.yaml
+```
+
+Wait for the controller deployment to be ready:
+
+```shell
+kubectl wait --timeout=5m -n agentic-net-system deployment/agentic-net-gw-controller --for=condition=Available
+```
+
+The controller will start running but won't do anything yet until we create a `Gateway` resource for it to manage.
+
+## 4. Define and Apply Network Policies
+
+Now, we'll define the core networking resources that describe our desired agent behavior. The `quickstart/policy/e2e.yaml` file contains all the necessary resources:
+
+- **Gateway**: Defines an entry point for traffic, listening on port `10001`.
+- **XBackend**: Two `XBackend` resources define the connection details for our local and remote MCP servers.
+- **HTTPRoute**: Two `HTTPRoute` resources map URL paths (`/local/mcp` and `/remote/mcp`) to their respective `XBackend`.
+- **XAccessPolicy**: Two `XAccessPolicy` resources define the access rules. They specify that the agent (`adk-agent-sa` service account) is only allowed to use the `add` and `getTinyImage` tools from the local server, and the `read_wiki_structure` tool from the remote server.
+
+Apply these resources to the `quickstart-ns` namespace:
 
 ```shell
 kubectl apply -f quickstart/policy/e2e.yaml
 ```
 
-## 4. Deploy the Envoy Proxy
-
-With the policies defined, it's time to run the Agentic Networking controller. This program will:
-
-1.  Read the `Gateway`, `HTTPRoute`, `Backend`, and `AuthPolicy` resources you just created.
-2.  Translate them into a corresponding Envoy proxy configuration.
-3.  Deploy an Envoy instance to the cluster, configured to enforce your policies.
-
-Run the controller from the root of the repository:
-
-```shell
-go run ./main.go --gateway agentic-net-gateway --namespace default
-```
-
-You will see a success message indicating that the Envoy configuration has been generated and the deployment is being rolled out.
-
-```
-✅ Envoy is ready! 🎉 You can access it within the cluster via one of the following methods:
-```
+Once you apply these resources, the Agentic Networking controller will detect the new `Gateway` and automatically provision an Envoy proxy `Deployment` and `Service` in the Gateway namespace (`quickstart-ns`). This Envoy proxy is dynamically configured via xDS to enforce the `XAccessPolicy` rules you defined.
 
 ## 5. Deploy the AI Agent
 
@@ -105,16 +111,17 @@ The agent's ability to understand requests and generate responses is powered by 
 > **Note**
 > The agent is configurable and supports various LLM providers like Google, OpenAI and Anthropic. You can modify the [agent deployment manifest](/quickstart/adk-agent/deployment.yaml) to use a different provider by configuring the API key as an environment variable. This [ADK documentation site](https://google.github.io/adk-docs/agents/models/) covers the setup details.
 
+<TODO: Use Google model for quota purpose. Switch to HF model later>
+
 1.  Obtain an API key from [Google AI Studio](https://aistudio.google.com/).
-2.  Create a Kubernetes secret to securely store your key:
+2.  Create a Kubernetes secret to securely store your key in the `quickstart-ns` namespace:
     ```shell
-    # TODO namespace
-    kubectl create secret generic google-secret --from-literal=google-api-key='<PASTE-YOUR-API-KEY-HERE>'
+    kubectl create secret generic google-secret -n quickstart-ns --from-literal=google-api-key='<PASTE-YOUR-API-KEY-HERE>'
     ```
 
 ### Step 5.2: Deploy the Agent
 
-Deploy the agent's `Deployment` and `Service`:
+Deploy the agent's `Deployment` and `Service` into the `quickstart-ns` namespace:
 
 ```shell
 kubectl apply -f quickstart/adk-agent/deployment.yaml
@@ -123,7 +130,7 @@ kubectl apply -f quickstart/adk-agent/deployment.yaml
 Wait for the deployment to complete and the agent to be ready:
 
 ```shell
-kubectl wait --timeout=5m -n default deployment/adk-agent --for=condition=Available
+kubectl wait --timeout=5m -n quickstart-ns deployment/adk-agent --for=condition=Available
 ```
 
 ## 6. Interact with the Agent
@@ -132,10 +139,10 @@ You can now interact with your agent through its web UI.
 
 ### Step 6.1: Access the Agent UI
 
-We'll use port forwarding to access the agent's web UI for simplicity.
+We'll use port forwarding to access the agent's web UI from your local machine.
 
 ```shell
-kubectl port-forward service/adk-agent-svc 8081:80 &
+kubectl port-forward -n quickstart-ns service/adk-agent-svc 8081:80 &
 ```
 
 Then, navigate to `http://localhost:8081` in your browser.
@@ -144,7 +151,7 @@ Then, navigate to `http://localhost:8081` in your browser.
 > If your cluster has a `LoadBalancer` implementation (e.g., in a cloud environment or a local setup like [MetalLB](https://metallb.io/installation/)), you can also access the agent via its external IP address. Get the agent's external IP address:
 >
 > ```shell
-> kubectl get svc adk-agent-svc -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+> kubectl get svc adk-agent-svc -n quickstart-ns -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 > ```
 >
 > Open this IP address in your web browser.
@@ -153,34 +160,22 @@ Then, navigate to `http://localhost:8081` in your browser.
 
 In the agent UI, select `mcp_agent` from the dropdown menu in the top-left corner. You can now send prompts to the agent.
 
-Try the following prompts and observe the results. The outcomes are determined by the `AuthPolicy` you deployed earlier.
+Try the following prompts and observe the results. The outcomes are determined by the `XAccessPolicy` you deployed earlier.
 
-| Prompt                                                           | Tool Invoked                        | Expected Result | Why?                                                                          |
-| :--------------------------------------------------------------- | :---------------------------------- | :-------------- | :---------------------------------------------------------------------------- |
-| "What can you do for me?"                                        | `tools/list` on both MCPs           | ✅ **Success**  | The default policy allows any user to list available tools.                   |
-| "Can you do 2+3?"                                                | `add` on local MCP                  | ✅ **Success**  | The `AuthPolicy` for the local backend explicitly allows the `add` tool.      |
-| "Can you echo back 'hello'?"                                     | `echo` on local MCP                 | ❌ **Failure**  | The `echo` tool is not in the allowlist for the local backend's `AuthPolicy`. |
-| "Read the structure of the `modelcontextprotocol/servers` repo." | `read_wiki_structure` on remote MCP | ✅ **Success**  | The `AuthPolicy` for the remote backend explicitly allows this tool.          |
-| "Read the wiki content of that repo."                            | `read_wiki_content` on remote MCP   | ❌ **Failure**  | The `read_wiki_content` tool is not in the allowlist for the remote backend.  |
-
-> **Note**
-> The agent currently returns a combined list of tools from both MCP servers, which includes tools not permitted by the configured `AuthPolicy`. Filtering disallowed tools from `tools/list` responses is a work in progress.
-
-## 7. Recap
-
-Congratulations! You have successfully:
-
-- Installed the Agentic Networking CRDs.
-- Defined declarative authorization policies for an AI agent.
-- Run a controller that automatically configures and deploys an Envoy proxy to enforce those policies.
-- Observed how the agent's access to tools is controlled at the network level based on your policies.
+| Prompt                                                           | Tool Invoked                        | Expected Result | Why?                                                                                                                                            |
+| :--------------------------------------------------------------- | :---------------------------------- | :-------------- | :---------------------------------------------------------------------------------------------------------------------------------------------- |
+| "What can you do for me?"                                        | `tools/list` on both MCPs           | ✅ **Success**  | The default policy allows any user to list available tools.<br/>(Note: Agent returns combined list of tools, filtering disallowed tools is WIP) |
+| "Can you do 2+3?"                                                | `add` on local MCP                  | ✅ **Success**  | The `XAccessPolicy` for the local backend explicitly allows the `add` tool.                                                                     |
+| "Can you echo back 'hello'?"                                     | `echo` on local MCP                 | ❌ **Failure**  | The `echo` tool is not in the allowlist for the local backend's `XAccessPolicy`.                                                                |
+| "Read the structure of the `modelcontextprotocol/servers` repo." | `read_wiki_structure` on remote MCP | ✅ **Success**  | The `XAccessPolicy` for the remote backend explicitly allows this tool.                                                                         |
+| "Read the wiki content of that repo."                            | `read_wiki_content` on remote MCP   | ❌ **Failure**  | The `read_wiki_content` tool is not in the allowlist for the remote backend.                                                                    |
 
 <details>
-<summary style="font-size: 1em; font-weight: bold;">🧪 Interested in playing more with policies?</summary>
+<summary style="font-size: 1.5em; font-weight: bold;">🧪 Try Dynamic Policy Updates in Action</summary>
 
 Want to see policy changes in action? Let's flip the script for the `local-mcp-backend`!
 
-1.  **Edit the `AuthPolicy`**: Open [quickstart/policy/e2e.yaml](/quickstart/policy/e2e.yaml) and modify the `auth-policy-local-mcp` to:
+1.  **Edit the `XAccessPolicy`**: Open `quickstart/policy/e2e.yaml` and modify the `auth-policy-local-mcp` resource to:
 
     - **Remove** the `"add"` tool.
     - **Add** the `"echo"` tool.
@@ -188,20 +183,19 @@ Want to see policy changes in action? Let's flip the script for the `local-mcp-b
     Your `auth-policy-local-mcp` section should look like this:
 
     ```yaml
-    apiVersion: agentic.networking.x-k8s.io/v1alpha1
-    kind: AuthPolicy
+    apiVersion: agentic.prototype.x-k8s.io/v0alpha0
+    kind: XAccessPolicy
     metadata:
       name: auth-policy-local-mcp
+      namespace: quickstart-ns
     spec:
-      targetRef:
-        group: gateway.networking.x-k8s.io
-        kind: Backend
-        name: local-mcp-backend
-      action: ALLOW
+      targetRefs:
+        - kind: XBackend
+          name: local-mcp-backend
       rules:
-        - source:
-            serviceAccounts:
-              - "system:serviceaccount:default:adk-agent-sa"
+        - principals:
+            - serviceAccount:
+                name: adk-agent-sa
           tools:
             - "getTinyImage"
             - "echo" # Now allowed!
@@ -210,48 +204,47 @@ Want to see policy changes in action? Let's flip the script for the `local-mcp-b
 2.  **Apply the updated policy**:
 
     ```shell
-    kubectl apply -f quickstart/policy/e2e.yaml
+    kubectl apply -n quickstart-ns -f quickstart/policy/e2e.yaml
     ```
 
-3.  **Re-run the controller and restart Envoy**: The controller needs to re-read the updated policies to generate a new Envoy configuration. Then, restart the Envoy deployment to apply the new configuration.
-
-    ```shell
-    # Re-run the controller to update the Envoy ConfigMap
-    go run ./main.go --gateway agentic-net-gateway --namespace default
-
-    # Restart the Envoy deployment to pick up the new config
-    kubectl rollout restart deployment/envoy-deployment -n agentic-net
-    ```
+3.  **The controller will automatically update Envoy**: The Agentic Networking controller will detect the change to the `XAccessPolicy` and dynamically update the running Envoy proxy with the new rules via xDS. No restart is needed!
 
 4.  **Interact with the Agent again**: Go back to `http://localhost:8081` and try these prompts:
 
-    | Prompt                       | Tool Invoked        | Expected Result | Why?                                                            |
-    | :--------------------------- | :------------------ | :-------------- | :-------------------------------------------------------------- |
-    | "Can you do 2+3?"            | `add` on local MCP  | ❌ **Failure**  | The `add` tool is now _disallowed_ by the updated `AuthPolicy`. |
-    | "Can you echo back 'hello'?" | `echo` on local MCP | ✅ **Success**  | The `echo` tool is now _allowed_ by the updated `AuthPolicy`.   |
+    | Prompt                       | Tool Invoked        | Expected Result | Why?                                                               |
+    | :--------------------------- | :------------------ | :-------------- | :----------------------------------------------------------------- |
+    | "Can you do 2+3?"            | `add` on local MCP  | ❌ **Failure**  | The `add` tool is now _disallowed_ by the updated `XAccessPolicy`. |
+    | "Can you echo back 'hello'?" | `echo` on local MCP | ✅ **Success**  | The `echo` tool is now _allowed_ by the updated `XAccessPolicy`.   |
 
-    Observe how the agent's behavior changes based on your policy modifications!
+    Observe how the agent's behavior changes instantly based on your policy modifications!
 
     </details>
+
+## 7. Recap
+
+Congratulations! You have successfully:
+
+- Installed the Agentic Networking CRDs.
+- Deployed the Agentic Networking controller.
+- Defined declarative authorization policies for an AI agent using `Gateway`, `HTTPRoute`, `XBackend`, and `XAccessPolicy` resources.
+- Observed the controller automatically provision and configure an Envoy proxy to enforce those policies.
+- Verified that the agent's access to tools is controlled at the network level.
 
 ## 8. Clean Up
 
 To remove all the resources created during this quickstart, run the following commands:
 
 ```shell
-# Delete the agent, policies, and MCP server
-kubectl delete -f quickstart/adk-agent/deployment.yaml
-kubectl delete secret google-secret
-kubectl delete -f quickstart/policy/e2e.yaml
-kubectl delete -f quickstart/mcpserver/deployment.yaml
+# Delete the namespace for the quickstart application, which includes the agent, policies, MCP server, and the Envoy proxy.
+kubectl delete namespace quickstart-ns
 
-# Delete the Envoy deployment and its namespace
-kubectl delete namespace agentic-net
+# Delete the controller, its namespace, and associated RBAC
+kubectl delete -f k8s/deploy/deployment.yaml
 
 # Uninstall Agentic Networking CRDs
-kubectl delete -f k8s/crds/agentic.networking.x-k8s.io_authpolicies.yaml
-kubectl delete -f k8s/crds/agentic.networking.x-k8s.io_backends.yaml
+kubectl delete -f k8s/crds/agentic.prototype.x-k8s.io_xaccesspolicies.yaml
+kubectl delete -f k8s/crds/agentic.prototype.x-k8s.io_xbackends.yaml
 
 # Uninstall Gateway API CRDs
-kubectl delete -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.0.0/standard-install.yaml
+kubectl delete --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
 ```

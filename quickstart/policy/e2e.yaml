@@ -56,7 +56,6 @@ spec:
           namespace: quickstart-ns
       tools:
         - "add"
-        - "echo"
         - "getTinyImage"
 ---
 apiVersion: agentic.prototype.x-k8s.io/v0alpha0
