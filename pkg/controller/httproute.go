@@ -70,6 +70,8 @@ func (c *Controller) onHTTPRouteDelete(obj interface{}) {
 	c.enqueueGatewaysForHTTPRoute(route.Spec.ParentRefs, route.Namespace)
 }
 
+// TODO: When an HTTPRoute is deleted, we need to consider how to handle the gateway reconcile.
+// Should we delete the associated Envoy proxy or enforce a default traffic policy?
 func (c *Controller) enqueueGatewaysForHTTPRoute(references []gatewayv1.ParentReference, localNamespace string) {
 	gatewaysToEnqueue := make(map[string]struct{})
 	for _, ref := range references {

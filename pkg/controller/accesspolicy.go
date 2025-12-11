@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"reflect"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -70,6 +72,20 @@ func (c *Controller) onAccessPolicyDelete(obj interface{}) {
 	c.enqueueGatewaysForAccessPolicy(policy)
 }
 
+// TODO: When an AccessPolicy is deleted, we need to consider how to handle the gateway reconcile.
+// Should we delete the associated Envoy proxy or enforce a default traffic policy?
 func (c *Controller) enqueueGatewaysForAccessPolicy(policy *agenticv0alpha0.XAccessPolicy) {
-	// TODO: Find the Backends that are targeted by this AccessPolicy, then find the HTTPRoutes that reference those Backends, then find the Gateways that reference those HTTPRoutes, and enqueue them.
+	for _, targetRef := range policy.Spec.TargetRefs {
+		// CEL validation ensures that only XBackend targetRefs are allowed.
+		backend, err := c.agentic.backendLister.XBackends(policy.Namespace).Get(string(targetRef.Name))
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.InfoS("AccessPolicy targets a non-existent Backend", "accesspolicy", klog.KObj(policy), "backend", types.NamespacedName{Namespace: policy.Namespace, Name: string(targetRef.Name)})
+			} else {
+				runtime.HandleError(fmt.Errorf("failed to get backend %s/%s targeted by access policy %s: %w", policy.Namespace, targetRef.Name, policy.Name, err))
+			}
+			continue
+		}
+		c.enqueueGatewaysForBackend(backend)
+	}
 }
