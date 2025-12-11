@@ -22,7 +22,12 @@ import (
 
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	credential_injectorv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/credential_injector/v3"
+	upstream_codecv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/upstream_codec/v3"
+	hcmv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+	genericv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/http/injected_credentials/generic/v3"
 	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
+	http_protocol_options "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -133,21 +138,29 @@ func buildK8sApiCluster() (*clusterv3.Cluster, error) {
 	tlsContext := &tlsv3.UpstreamTlsContext{
 		Sni: "kubernetes.default.svc",
 		CommonTlsContext: &tlsv3.CommonTlsContext{
-			ValidationContextType: &tlsv3.CommonTlsContext_ValidationContext{
-				ValidationContext: &tlsv3.CertificateValidationContext{
-					TrustedCa: &corev3.DataSource{
-						Specifier: &corev3.DataSource_Filename{
-							// This tells Envoy to trust the K8s API server's cert
-							Filename: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
-						},
-					},
-				},
-			},
+			// ValidationContextType: &tlsv3.CommonTlsContext_ValidationContext{
+			// 	ValidationContext: &tlsv3.CertificateValidationContext{
+			// 		TrustedCa: &corev3.DataSource{
+			// 			Specifier: &corev3.DataSource_Filename{
+			// 				// This tells Envoy to trust the K8s API server's cert
+			// 				Filename: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+			// 			},
+			// 		},
+			// 	},
+			// },
+			//
+			// https://github.com/envoyproxy/gateway/blob/b9123a88d14de59b8c574f1f8108067130d7f4b5/internal/infrastructure/kubernetes/proxy/testdata/deployments/custom-sa.yaml#L203
+			ValidationContextType: &tlsv3.CommonTlsContext_ValidationContextSdsSecretConfig{},
 		},
 	}
 	anyTlsContext, err := anypb.New(tlsContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal UpstreamTlsContext: %w", err)
+	}
+
+	anyHttpProtocolOptions, err := buildK8sApiHttpProtocolOptions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal http protocol options: %w", err)
 	}
 
 	cluster := &clusterv3.Cluster{
@@ -160,6 +173,84 @@ func buildK8sApiCluster() (*clusterv3.Cluster, error) {
 				TypedConfig: anyTlsContext,
 			},
 		},
+		TypedExtensionProtocolOptions: map[string]*anypb.Any{
+			"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": anyHttpProtocolOptions,
+		},
 	}
 	return cluster, nil
+}
+
+func buildK8sApiHttpProtocolOptions() (*anypb.Any, error) {
+	anyCredentialInjector, err := buildK8sApiCredentialInjector()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal credential injector: %w", err)
+	}
+
+	upstreamCodec := &upstream_codecv3.UpstreamCodec{}
+	anyUpstreamCodec, err := anypb.New(upstreamCodec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal upstream codec: %w", err)
+	}
+
+	httpProtocolOptions := &http_protocol_options.HttpProtocolOptions{
+		UpstreamProtocolOptions: &http_protocol_options.HttpProtocolOptions_ExplicitHttpConfig_{
+			ExplicitHttpConfig: &http_protocol_options.HttpProtocolOptions_ExplicitHttpConfig{
+				ProtocolConfig: &http_protocol_options.HttpProtocolOptions_ExplicitHttpConfig_Http2ProtocolOptions{
+					Http2ProtocolOptions: &corev3.Http2ProtocolOptions{
+						ConnectionKeepalive: &corev3.KeepaliveSettings{
+							Interval: durationpb.New(30 * time.Second),
+							Timeout:  durationpb.New(5 * time.Second),
+						},
+					},
+				},
+			},
+		},
+		HttpFilters: []*hcmv3.HttpFilter{
+			{
+				Name: "envoy.filters.http.credential_injector",
+				ConfigType: &hcmv3.HttpFilter_TypedConfig{
+					TypedConfig: anyCredentialInjector,
+				},
+			},
+			{
+				Name: "envoy.extensions.filters.http.upstream_codec.v3.UpstreamCodec",
+				ConfigType: &hcmv3.HttpFilter_TypedConfig{
+					TypedConfig: anyUpstreamCodec,
+				},
+			},
+		},
+	}
+
+	anyHttpProtocolOptions, err := anypb.New(httpProtocolOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal http protocol options: %w", err)
+	}
+	return anyHttpProtocolOptions, nil
+}
+
+func buildK8sApiCredentialInjector() (*anypb.Any, error) {
+	genericCredential := &genericv3.Generic{
+		Credential: &tlsv3.SdsSecretConfig{
+			Name: "envoy-sa-token",
+			//  TODO: implement SDS server.
+			// SdsConfig: &corev3.ConfigSource{},
+		},
+	}
+	genericCredentialAny, err := anypb.New(genericCredential)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal generic provider config: %w", err)
+	}
+
+	credentialInjector := &credential_injectorv3.CredentialInjector{
+		Credential: &corev3.TypedExtensionConfig{
+			Name:        "envoy.http.injected_credentials.generic",
+			TypedConfig: genericCredentialAny,
+		},
+		Overwrite: true,
+	}
+	anyCredentialInjector, err := anypb.New(credentialInjector)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal credential injector: %w", err)
+	}
+	return anyCredentialInjector, nil
 }
