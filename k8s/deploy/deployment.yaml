@@ -93,6 +93,7 @@ spec:
             - "/manager"
           args:
             - "--envoy-image=envoyproxy/envoy:v1.36-latest"
+            - "--worker-count=6"
             - "--v=5" # Set log level to 5 (debug)
   revisionHistoryLimit: 1
 ---

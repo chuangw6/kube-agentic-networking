@@ -34,14 +34,11 @@ import (
 	discovery "sigs.k8s.io/kube-agentic-networking/pkg/discovery"
 )
 
-const (
-	workerCount = 2
-)
-
 var (
 	masterURL    string
 	kubeconfig   string
 	envoyImage   string
+	workerCount  int
 	resyncPeriod time.Duration
 )
 
@@ -49,6 +46,7 @@ func init() {
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster. Leaving empty assumes in-cluster configuration.")
 	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster. Leaving empty assumes in-cluster configuration.")
 	flag.StringVar(&envoyImage, "envoy-image", "", "The image of the envoy proxy.")
+	flag.IntVar(&workerCount, "worker-count", 2, "Number of workers for the controller")
 	flag.DurationVar(&resyncPeriod, "resync-period", 10*time.Minute, "Informer resync period")
 }
 
