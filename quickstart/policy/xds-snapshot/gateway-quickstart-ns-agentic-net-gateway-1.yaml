@@ -1,0 +1,284 @@
+type.googleapis.com/envoy.config.cluster.v3.Cluster:
+- connectTimeout: 5s
+  loadAssignment:
+    clusterName: quickstart-ns-local-mcp-backend
+    endpoints:
+    - lbEndpoints:
+      - endpoint:
+          address:
+            socketAddress:
+              address: mcp-everything-svc.quickstart-ns.svc.cluster.local
+              portValue: 3001
+  name: quickstart-ns-local-mcp-backend
+  type: STRICT_DNS
+- connectTimeout: 5s
+  loadAssignment:
+    clusterName: quickstart-ns-remote-mcp-backend
+    endpoints:
+    - lbEndpoints:
+      - endpoint:
+          address:
+            socketAddress:
+              address: mcp.deepwiki.com
+              portValue: 443
+  name: quickstart-ns-remote-mcp-backend
+  transportSocket:
+    name: envoy.transport_sockets.tls
+    typedConfig:
+      '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+      sni: mcp.deepwiki.com
+  type: LOGICAL_DNS
+- loadAssignment:
+    clusterName: kubernetes_api_cluster
+    endpoints:
+    - lbEndpoints:
+      - endpoint:
+          address:
+            socketAddress:
+              address: kubernetes.default.svc
+              portValue: 443
+  name: kubernetes_api_cluster
+  transportSocket:
+    name: envoy.transport_sockets.tls
+    typedConfig:
+      '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+      commonTlsContext:
+        validationContext:
+          trustedCa:
+            filename: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      sni: kubernetes.default.svc
+  type: LOGICAL_DNS
+type.googleapis.com/envoy.config.listener.v3.Listener:
+- address:
+    socketAddress:
+      address: 0.0.0.0
+      portValue: 10001
+  filterChains:
+  - filters:
+    - name: envoy.filters.network.http_connection_manager
+      typedConfig:
+        '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+        httpFilters:
+        - name: envoy.filters.http.jwt_authn
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+            providers:
+              kubernetes_provider:
+                claimToHeaders:
+                - claimName: sub
+                  headerName: x-user-role
+                fromHeaders:
+                - name: x-k8s-sa-token
+                issuer: https://kubernetes.default.svc.cluster.local
+                remoteJwks:
+                  cacheDuration: 3600s
+                  httpUri:
+                    cluster: kubernetes_api_cluster
+                    timeout: 5s
+                    uri: https://kubernetes.default.svc/openid/v1/jwks
+            rules:
+            - match:
+                prefix: /
+              requires:
+                providerName: kubernetes_provider
+        - name: envoy.filters.http.mcp
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.mcp.v3.Mcp
+        - name: envoy.filters.http.rbac
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC
+        - name: envoy.filters.http.router
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+        rds:
+          configSource:
+            ads: {}
+            resourceApiVersion: V3
+          routeConfigName: route-10001
+        statPrefix: agentic-net-gateway-listener2
+  listenerFilters:
+  - name: envoy.filters.listener.tls_inspector
+    typedConfig:
+      '@type': type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+  name: listener-10001
+type.googleapis.com/envoy.config.route.v3.RouteConfiguration:
+- ignorePortInHostMatching: true
+  name: route-10001
+  virtualHosts:
+  - domains:
+    - '*'
+    name: agentic-net-gateway-vh-10001-*
+    routes:
+    - match:
+        pathSeparatedPrefix: /remote/mcp
+      name: quickstart-ns-httproute-remote-mcp-rule0-match0
+      route:
+        prefixRewrite: /mcp
+        weightedClusters:
+          clusters:
+          - hostRewriteLiteral: mcp.deepwiki.com
+            name: quickstart-ns-remote-mcp-backend
+            typedPerFilterConfig:
+              envoy.filters.http.rbac:
+                '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                rbac:
+                  rules:
+                    policies:
+                      allow-anyone-to-initialize-and-list-tools:
+                        permissions:
+                        - andRules:
+                            rules:
+                            - sourcedMetadata:
+                                metadataMatcher:
+                                  filter: mcp_proxy
+                                  path:
+                                  - key: method
+                                  value:
+                                    orMatch:
+                                      valueMatchers:
+                                      - stringMatch:
+                                          exact: initialize
+                                      - stringMatch:
+                                          exact: notifications/initialized
+                                      - stringMatch:
+                                          exact: tools/list
+                        principals:
+                        - any: true
+                      allow-http-get:
+                        permissions:
+                        - header:
+                            name: :method
+                            stringMatch:
+                              exact: GET
+                        principals:
+                        - any: true
+                      allow-mcp-session-close:
+                        permissions:
+                        - any: true
+                        principals:
+                        - andIds:
+                            ids:
+                            - header:
+                                name: :method
+                                stringMatch:
+                                  exact: DELETE
+                            - header:
+                                name: mcp-session-id
+                                presentMatch: true
+                      quickstart-ns-remote-mcp-backend-rule-0:
+                        permissions:
+                        - andRules:
+                            rules:
+                            - sourcedMetadata:
+                                metadataMatcher:
+                                  filter: mcp_proxy
+                                  path:
+                                  - key: method
+                                  value:
+                                    stringMatch:
+                                      exact: tools/call
+                            - sourcedMetadata:
+                                metadataMatcher:
+                                  filter: mcp_proxy
+                                  path:
+                                  - key: params
+                                  - key: name
+                                  value:
+                                    stringMatch:
+                                      exact: read_wiki_structure
+                        principals:
+                        - orIds:
+                            ids:
+                            - header:
+                                name: x-user-role
+                                stringMatch:
+                                  exact: system:serviceaccount:quickstart-ns:adk-agent-sa
+            weight: 1
+    - match:
+        pathSeparatedPrefix: /local/mcp
+      name: quickstart-ns-httproute-local-mcp-rule0-match0
+      route:
+        prefixRewrite: /mcp
+        weightedClusters:
+          clusters:
+          - name: quickstart-ns-local-mcp-backend
+            typedPerFilterConfig:
+              envoy.filters.http.rbac:
+                '@type': type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute
+                rbac:
+                  rules:
+                    policies:
+                      allow-anyone-to-initialize-and-list-tools:
+                        permissions:
+                        - andRules:
+                            rules:
+                            - sourcedMetadata:
+                                metadataMatcher:
+                                  filter: mcp_proxy
+                                  path:
+                                  - key: method
+                                  value:
+                                    orMatch:
+                                      valueMatchers:
+                                      - stringMatch:
+                                          exact: initialize
+                                      - stringMatch:
+                                          exact: notifications/initialized
+                                      - stringMatch:
+                                          exact: tools/list
+                        principals:
+                        - any: true
+                      allow-http-get:
+                        permissions:
+                        - header:
+                            name: :method
+                            stringMatch:
+                              exact: GET
+                        principals:
+                        - any: true
+                      allow-mcp-session-close:
+                        permissions:
+                        - any: true
+                        principals:
+                        - andIds:
+                            ids:
+                            - header:
+                                name: :method
+                                stringMatch:
+                                  exact: DELETE
+                            - header:
+                                name: mcp-session-id
+                                presentMatch: true
+                      quickstart-ns-local-mcp-backend-rule-0:
+                        permissions:
+                        - andRules:
+                            rules:
+                            - sourcedMetadata:
+                                metadataMatcher:
+                                  filter: mcp_proxy
+                                  path:
+                                  - key: method
+                                  value:
+                                    stringMatch:
+                                      exact: tools/call
+                            - sourcedMetadata:
+                                metadataMatcher:
+                                  filter: mcp_proxy
+                                  path:
+                                  - key: params
+                                  - key: name
+                                  value:
+                                    orMatch:
+                                      valueMatchers:
+                                      - stringMatch:
+                                          exact: add
+                                      - stringMatch:
+                                          exact: getTinyImage
+                        principals:
+                        - orIds:
+                            ids:
+                            - header:
+                                name: x-user-role
+                                stringMatch:
+                                  exact: system:serviceaccount:quickstart-ns:adk-agent-sa
+            weight: 1
