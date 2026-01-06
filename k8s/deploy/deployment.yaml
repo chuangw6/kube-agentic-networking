@@ -87,7 +87,7 @@ spec:
       serviceAccountName: agentic-net-gw-controller-sa
       containers:
         - name: manager
-          image: chuangw/agentic-net-gw-controller:latest # TODO: replace with official registry image
+          image: chuangw/agentic-net-gw-controller:test # TODO: replace with official registry image
           imagePullPolicy: Always
           command:
             - "/manager"

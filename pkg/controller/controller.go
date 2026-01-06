@@ -18,10 +18,13 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -32,9 +35,13 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
+	envoyproxytypes "github.com/envoyproxy/go-control-plane/pkg/cache/types"
+	resourcev3 "github.com/envoyproxy/go-control-plane/pkg/resource/v3"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayclient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gatewayinformers "sigs.k8s.io/gateway-api/pkg/client/informers/externalversions/apis/v1"
 	gatewaylisters "sigs.k8s.io/gateway-api/pkg/client/listers/apis/v1"
+	"sigs.k8s.io/yaml"
 
 	agenticclient "sigs.k8s.io/kube-agentic-networking/k8s/client/clientset/versioned"
 	agenticinformers "sigs.k8s.io/kube-agentic-networking/k8s/client/informers/externalversions/api/v0alpha0"
@@ -294,11 +301,67 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	logger.Info("Translated gateway to xDS resources")
 
+	const xdsSnapshotDumpDir = "/tmp/xds-dump"
+	if err := c.dumpXDSSnapshot(ctx, gateway, resources, xdsSnapshotDumpDir); err != nil {
+		return err
+	}
+
 	// Update the xDS server with the new resources.
 	if err := c.xdsServer.UpdateXDSServer(ctx, rm.NodeID(), resources); err != nil {
 		return fmt.Errorf("failed to update xDS server: %w", err)
 	}
 
 	logger.Info("Updated xDS server with new resources", "nodeID", rm.NodeID())
+	return nil
+}
+
+func (c *Controller) dumpXDSSnapshot(ctx context.Context, gateway *gatewayv1.Gateway, resources map[resourcev3.Type][]envoyproxytypes.Resource, dumpDir string) error {
+	logger := klog.FromContext(ctx)
+	logger.Info("Dumping xDS snapshot")
+
+	if err := os.MkdirAll(dumpDir, 0755); err != nil {
+		return fmt.Errorf("failed to create xds snapshot dump directory: %w", err)
+	}
+
+	// Create a map to hold the JSON-marshaled resources.
+	dumpableMap := make(map[string][]json.RawMessage)
+
+	// Use protojson to marshal each resource individually.
+	mo := protojson.MarshalOptions{}
+	for resType, resList := range resources {
+		var marshaledResList []json.RawMessage
+		for _, res := range resList {
+			jsonBytes, err := mo.Marshal(res)
+			if err != nil {
+				logger.Error(err, "failed to marshal resource for dumping", "type", resType)
+				continue
+			}
+			marshaledResList = append(marshaledResList, json.RawMessage(jsonBytes))
+		}
+		dumpableMap[string(resType)] = marshaledResList
+	}
+
+	// Use the standard json library to marshal the final map for pretty-printing.
+	jsonBytes, err := json.MarshalIndent(dumpableMap, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling final output to JSON: %w", err)
+	}
+
+	filename := fmt.Sprintf("%s/gateway-%s-%s-%d", dumpDir, gateway.Namespace, gateway.Name, gateway.Generation)
+	outputJSONFile := fmt.Sprintf("%s.json", filename)
+	outputYAMLFile := fmt.Sprintf("%s.yaml", filename)
+	if err := os.WriteFile(outputJSONFile, jsonBytes, 0644); err != nil {
+		return fmt.Errorf("error writing to output file %s: %w", outputJSONFile, err)
+	}
+
+	yamlBytes, err := yaml.JSONToYAML(jsonBytes)
+	if err != nil {
+		return fmt.Errorf("error converting JSON to YAML: %w", err)
+	}
+
+	if err := os.WriteFile(outputYAMLFile, yamlBytes, 0644); err != nil {
+		return fmt.Errorf("error writing to output file %s: %w", outputYAMLFile, err)
+	}
+	logger.Info("Successfully dumped xDS snapshot to json and yaml files", "fileName", filename)
 	return nil
 }
