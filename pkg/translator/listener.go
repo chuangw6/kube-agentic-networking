@@ -349,9 +349,10 @@ func (t *Translator) buildHTTPFilters(gateway *gatewayv1.Gateway) ([]*hcm.HttpFi
 		return nil, err
 	}
 
-	rbacFiltersWithExtAuthz := gatewayRBACFiltersWithExtAuthz // RBAC filter name → list of ext_authz configs referenced by the RBAC rules
-	for filterName, extAuthzConfigs := range backendRBACFiltersWithExtAuthz {
-		rbacFiltersWithExtAuthz[filterName] = append(rbacFiltersWithExtAuthz[filterName], extAuthzConfigs...)
+	// merges the two maps of ext_authz unique ID to RBAC filter names, since both Gateway-level and Backend-level RBAC filters can reference the same ext_authz config, and we need to build the ext_authz filter with metadata matchers for all referencing RBAC filters.
+	rbacFiltersWithExtAuthz := gatewayRBACFiltersWithExtAuthz // ExternalAuthz unique ID → list of RBAC filters that reference it
+	for extAuthUniqueID, filterNames := range backendRBACFiltersWithExtAuthz {
+		rbacFiltersWithExtAuthz[extAuthUniqueID] = append(rbacFiltersWithExtAuthz[extAuthUniqueID], filterNames...)
 	}
 
 	// 4. Add ext_authz filters.
